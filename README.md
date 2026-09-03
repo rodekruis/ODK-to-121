@@ -3,6 +3,13 @@
 ETL pipeline that pulls form submissions from **ODK Central** and pushes them to the
 **121 platform** as registrations. Built by [NLRC 510](https://www.510.global/).
 
+
+## NOTES
+- /api/programs/{programId}/registration-attributes needed to define optional fields in 121, before submitting
+- should be done automatically based on the ODK form
+- check current form version, if doesn't match check fields in ODK, create new ones in 121, do NOT delete old ones in 121 (safer, kobo-style)
+- AI idea: use reviewStatus to ensure idempotency, needs the REST API to work
+
 ## How it works
 
 ```
