@@ -1,0 +1,53 @@
+[project]
+name = "odk-to-121"
+version = "0.1.0"
+description = "ETL pipeline: ODK Central submissions -> 121 registrations"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "NLRC 510", email = "support@510.global" }]
+dependencies = [
+    "click>=8.1",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "requests>=2.32",
+]
+
+[project.scripts]
+run-pipeline = "odk_to_121.infra.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "responses>=0.25",
+    "ruff>=0.8",
+    "ty>=0.0.1a1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odk_to_121"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "T20", "N", "RET", "PTH"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: integration tests",
+    "needs_secrets: needs API keys/credentials",
+]
+
+[tool.coverage.run]
+source = ["src/odk_to_121"]

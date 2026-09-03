@@ -1,0 +1,85 @@
+# ODK form -> 121 program. Field mappings are declared here, not in code.
+pipeline_type: registrations
+
+run_targets:
+  debug:
+    entities:
+      - id: registration-form
+        data_source: dummy_submissions
+        odk:
+          project_id: 1
+          form_id: registration_form
+        program:
+          program_id: 1
+          submission_mode: upsert
+          preferred_language: en
+        reference_id_field: __id
+        skip_review_states: [rejected, hasIssues]
+        field_mappings:
+          - odk_field: person/full_name
+            attribute: fullName
+            required: true
+          - odk_field: person/phone_number
+            attribute: phoneNumber
+            required: true
+          - odk_field: household/size
+            attribute: householdSize
+            default: 1
+        output:
+          mode: local
+          path: output/
+
+  test:
+    entities:
+      - id: registration-form
+        data_source: odk_submissions
+        odk:
+          project_id: 1
+          form_id: registration_form
+          submission_filter: __system/reviewState ne 'rejected'
+        program:
+          program_id: 1
+          submission_mode: upsert
+          preferred_language: en
+        reference_id_field: __id
+        skip_review_states: [rejected, hasIssues]
+        field_mappings:
+          - odk_field: person/full_name
+            attribute: fullName
+            required: true
+          - odk_field: person/phone_number
+            attribute: phoneNumber
+            required: true
+          - odk_field: household/size
+            attribute: householdSize
+            default: 1
+        output:
+          mode: local
+          path: output/
+
+  prod:
+    entities:
+      - id: registration-form
+        data_source: odk_submissions
+        odk:
+          project_id: 1
+          form_id: registration_form
+        program:
+          program_id: 1
+          submission_mode: upsert
+          preferred_language: en
+        reference_id_field: __id
+        skip_review_states: [rejected, hasIssues]
+        field_mappings:
+          - odk_field: person/full_name
+            attribute: fullName
+            required: true
+          - odk_field: person/phone_number
+            attribute: phoneNumber
+            required: true
+          - odk_field: household/size
+            attribute: householdSize
+            default: 1
+        output:
+          mode: api
+          path: output/

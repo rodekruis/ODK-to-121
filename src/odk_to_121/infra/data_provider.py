@@ -1,0 +1,62 @@
+"""Read-only abstraction over all data sources."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+
+from odk_to_121.infra.data_types.config_types import DataSource, EntityRunConfig
+from odk_to_121.infra.data_types.domain_types import OdkSubmissionSet
+from odk_to_121.infra.utils.data_fetchers import load_submissions
+from odk_to_121.infra.utils.odk_client import OdkClient
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LoadedDataSource:
+    data_source: DataSource
+    data: object | None = None
+    error: str | None = None
+    metadata: dict[str, str | int | float | bool] = field(default_factory=dict)
+
+
+class DataProvider:
+    """Loads configured sources once, then serves them with runtime type checking."""
+
+    def __init__(self, odk_client: OdkClient | None = None):
+        self.odk_client = odk_client
+        self.loaded_data: dict[DataSource, LoadedDataSource] = {}
+
+    def load_data(self, entity: EntityRunConfig) -> list[str]:
+        """Load every source for an entity. Returns error messages (empty = success)."""
+        container = LoadedDataSource(data_source=entity.data_source)
+        try:
+            submissions = load_submissions(entity, self.odk_client)
+        except Exception as exc:  # noqa: BLE001 - one job: report, never crash the run
+            container.error = str(exc)
+            self.loaded_data[entity.data_source] = container
+            return [f"{entity.entity_id}: failed to load {entity.data_source}: {exc}"]
+
+        container.data = submissions
+        container.metadata = {"count": len(submissions), "form_id": submissions.form_id}
+        self.loaded_data[entity.data_source] = container
+        logger.info("%s: loaded %d submissions", entity.entity_id, len(submissions))
+        return []
+
+    def get_data[T](self, source: DataSource, expected_type: type[T]) -> T:
+        """Get loaded data with runtime type checking."""
+        if source not in self.loaded_data:
+            raise KeyError(f"Data source '{source}' not loaded")
+        container = self.loaded_data[source]
+        if not isinstance(container.data, expected_type):
+            raise TypeError(
+                f"'{source}' expected {expected_type.__name__}, got {type(container.data).__name__}"
+            )
+        return container.data
+
+    def get_submissions(self) -> OdkSubmissionSet:
+        """Submission set for this run, regardless of which source produced it."""
+        for source in self.loaded_data:
+            return self.get_data(source, OdkSubmissionSet)
+        raise KeyError("No data sources loaded")
