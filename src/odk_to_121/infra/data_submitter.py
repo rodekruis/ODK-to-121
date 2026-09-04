@@ -1,4 +1,4 @@
-"""Write-only abstraction over output targets: accumulate, validate, then dispatch."""
+"""Write-only abstraction over output targets: accumulate, validate, then load."""
 
 from __future__ import annotations
 
@@ -21,18 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 class DataSubmitter:
-    """Builder that domain code fills, and that owns validation and dispatch."""
+    """Builder that domain code fills, and that owns validation and loading."""
 
     def __init__(
         self,
-        run_target_id: str,
+        route_id: str,
         program_id: int,
         source_form_id: str,
         *,
         issued_at: datetime | None = None,
         client_121: Client121 | None = None,
     ):
-        self.run_target_id = run_target_id
+        self.route_id = route_id
         self.client_121 = client_121
         self._batch = RegistrationBatch(
             program_id=program_id,
@@ -60,34 +60,34 @@ class DataSubmitter:
         )
 
     def validate(self, mappings: tuple[FieldMapping, ...]) -> list[str]:
-        return check_batch(self.run_target_id, self._batch, mappings)
+        return check_batch(self.route_id, self._batch, mappings)
 
-    def send_all(
+    def load_all(
         self,
         output_mode: OutputMode,
         output_path: str,
         mappings: tuple[FieldMapping, ...],
     ) -> list[str]:
-        """Validate everything, then dispatch. All-or-nothing."""
+        """Validate everything, then load. All-or-nothing."""
         errors = self.validate(mappings)
         if errors:
-            logger.error("%s: integrity checks failed (%d)", self.run_target_id, len(errors))
+            logger.error("%s: integrity checks failed (%d)", self.route_id, len(errors))
             return errors
 
         if not self._batch.registrations:
-            logger.info("%s: nothing to submit", self.run_target_id)
+            logger.info("%s: nothing to submit", self.route_id)
             return []
 
         match output_mode:
             case OutputMode.LOCAL:
-                return self._write_to_file(output_path)
+                return self._load_to_file(output_path)
             case OutputMode.PLATFORM_121:
-                return self._send_to_121()
+                return self._load_to_121()
 
-    def _write_to_file(self, output_path: str) -> list[str]:
-        """Write the batch to a timestamped directory, atomically."""
+    def _load_to_file(self, output_path: str) -> list[str]:
+        """Load the batch into a timestamped directory, atomically."""
         stamp = self._batch.issued_at.strftime("%Y%m%dT%H%M%SZ")
-        directory = Path(output_path) / self.run_target_id / stamp
+        directory = Path(output_path) / self.route_id / stamp
         directory.mkdir(parents=True, exist_ok=True)
         target = directory / "registrations.json"
 
@@ -99,28 +99,31 @@ class DataSubmitter:
                 tmp_path = tmp.name
             shutil.move(tmp_path, target)
         except OSError as exc:
-            return [f"{self.run_target_id}: could not write output to {target}: {exc}"]
+            return [f"{self.route_id}: could not write output to {target}: {exc}"]
 
         logger.info(
-            "%s: wrote %d registrations to %s", self.run_target_id, len(self.registrations), target
+            "%s: loaded %d registrations into %s",
+            self.route_id,
+            len(self.registrations),
+            target,
         )
         return []
 
-    def _send_to_121(self) -> list[str]:
+    def _load_to_121(self) -> list[str]:
         """Create the registrations 121 does not have yet; existing ones are left untouched."""
         client = self.client_121
         if client is None:
-            return [f"{self.run_target_id}: no 121 client configured for API output"]
+            return [f"{self.route_id}: no 121 client configured for API output"]
 
         try:
             existing = client.get_reference_ids(self._batch.program_id)
         except (requests.RequestException, ValueError) as exc:
-            return [f"{self.run_target_id}: could not list existing registrations: {exc}"]
+            return [f"{self.route_id}: could not list existing registrations: {exc}"]
 
         to_create = [r for r in self.registrations if r.reference_id not in existing]
         skipped = len(self.registrations) - len(to_create)
         if skipped:
-            logger.info("%s: skipped %d registrations already in 121", self.run_target_id, skipped)
+            logger.info("%s: skipped %d registrations already in 121", self.route_id, skipped)
         return self._create(client, to_create)
 
     def _create(self, client: Client121, registrations: list[Registration]) -> list[str]:
@@ -130,12 +133,12 @@ class DataSubmitter:
         try:
             response = client.create_registrations(self._batch.program_id, payload)
         except requests.RequestException as exc:
-            return [f"{self.run_target_id}: creating registrations failed: {exc}"]
+            return [f"{self.route_id}: creating registrations failed: {exc}"]
 
         if response.status_code not in range(200, 300):
             return [
-                f"{self.run_target_id}: 121 returned {response.status_code} on create: "
+                f"{self.route_id}: 121 returned {response.status_code} on create: "
                 f"{response.text[:500]}"
             ]
-        logger.info("%s: created %d registrations", self.run_target_id, len(registrations))
+        logger.info("%s: created %d registrations", self.route_id, len(registrations))
         return []

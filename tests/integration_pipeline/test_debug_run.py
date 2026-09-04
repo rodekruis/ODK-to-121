@@ -11,7 +11,7 @@ from odk_to_121.infra.orchestrator import run_pipeline
 CONFIG = """
 environments:
   debug:
-    run_targets:
+    routes:
       - id: form-a
         data_source: dummy_submissions
         odk:

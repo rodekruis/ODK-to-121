@@ -50,14 +50,14 @@ Use a `src/` layout. Separate **infra** (extract/load mechanics, maintained by e
 ```
 src/my_pipeline/
 ├── infra/
-│   ├── orchestrator.py      # wires extract → transform → load per entity
-│   ├── config_reader.py     # load + validate YAML
+│   ├── orchestrator.py      # wires extract → transform → load per route
+│   ├── config_reader.py     # read + validate YAML
 │   ├── data_provider.py     # read-only abstraction over all sources
-│   ├── data_submitter.py    # write/validate/dispatch output (builder pattern)
+│   ├── data_submitter.py    # write/validate/load output (builder pattern)
 │   ├── data_types/          # config_types, domain_types, output_types (dataclasses + StrEnums)
-│   ├── utils/               # api_client, data_fetchers, integrity_checks
+│   ├── utils/               # client_<system>, extract, integrity_checks
 │   └── configs/*.yaml       # per-domain run config
-├── <domain>/transform.py    # pure transform fn per pipeline variant
+├── transform.py             # pure transform fn (one per domain if there are several)
 └── storage/                 # Storage ABC + LocalStorage / AzureBlobStorage (Protocol-based pipelines)
 run_pipeline.py / cli.py     # CLI entry point
 tests/{unit, integration_infra, integration_pipeline}/
@@ -72,7 +72,7 @@ and an `ETLPipeline` class running `asyncio.gather`) is preferred. Use bronze/si
 - Strict **extract → transform → load** separation; config drives *what* to fetch and *where* to send.
 - **DataProvider** loads each source into typed containers and exposes `get_data(source, expected_type)`
   with runtime type checking. **DataSubmitter** accumulates results, runs integrity checks, then dispatches.
-- Pipelines must support run targets **`debug`** (local/dummy → local files), **`test`** (CI), **`prod`**
+- Pipelines must support environments **`debug`** (local/dummy → local files), **`test`** (CI), **`prod`**
   (real sources → API/DB).
 - Make runs **idempotent** (timestamped output dirs, or upsert with natural keys). Transforms must avoid
   in-place mutation of inputs.
@@ -81,7 +81,7 @@ and an `ETLPipeline` class running `asyncio.gather`) is preferred. Use bronze/si
 
 - **YAML config per domain** (Click pipelines) or **dataclass `CONFIGS` registry** (tyro pipelines). Validate
   config on load; return `False`/raise on any error.
-- Use **`StrEnum`** for all categorical values (`DataSource`, `OutputMode`, `RunTarget`, `PipelineType`) and
+- Use **`StrEnum`** for all categorical values (`DataSource`, `OutputMode`, `Environment`) and
   **frozen dataclasses** for config objects — never raw dicts.
 - **Environment variables hold secrets/hosts only** (`API_HOST`, `API_KEY`, `DB_PASSWORD`,
   `APPLICATIONINSIGHTS_CONNECTION_STRING`); keep `.env` gitignored with a committed `example.env`.
@@ -98,7 +98,7 @@ and an `ETLPipeline` class running `asyncio.gather`) is preferred. Use bronze/si
 
 ## Extract
 
-- One fetch function per source; dispatch with `match`. Use a **resilient `requests.Session`**
+- One extract function per source; dispatch with `match`. Use a **resilient `requests.Session`**
   (`Retry` with backoff on 429/5xx, idempotent methods only) and explicit **timeouts**; call
   `raise_for_status()`. Handle pagination explicitly.
 - **Cache** large static reference data (TTL); **never** cache data that changes between runs (forecasts,
@@ -115,14 +115,14 @@ and an `ETLPipeline` class running `asyncio.gather`) is preferred. Use bronze/si
 
 ## Load
 
-- **Validate before sending**: `DataSubmitter.send_all()` runs all integrity checks first and aborts on any
+- **Validate before loading**: `DataSubmitter.load_all()` runs all integrity checks first and aborts on any
   error (all-or-nothing). Integrity checks return `list[str]` of contextual error messages.
-- Dispatch by `OutputMode` (`LOCAL` → JSON/CSV; `API` → single batched, idempotent request). Prefer atomic
+- Dispatch by `OutputMode` (`LOCAL` → JSON/CSV; remote → single batched, idempotent request). Prefer atomic
   writes (temp file + move). Check API response bodies, not just status codes; log the request ID.
 
 ## Error Handling
 
-- **Accumulate errors and continue** across entities; return `list[str]` (empty = success). Reserve
+- **Accumulate errors and continue** across routes; return `list[str]` (empty = success). Reserve
   exceptions for truly unexpected failures. **Fail fast** only on invalid config / missing required env /
   unestablishable connections.
 - Error messages follow `"{entity}: {what happened} {relevant values}"`. Never swallow exceptions silently
@@ -147,7 +147,7 @@ uv run pytest -m "not integration"
 
 - Prefer **Click** for YAML-config pipelines (typed options, `Choice`, `group()` for multi-pipeline repos);
   **tyro** when config is already a dataclass. Register a `[project.scripts]` entry point.
-- Standard options: `--config`, `--run-target`, `--scenario`, `--issued-at`, `--dry-run`. Module-level
+- Standard options: `--config`, `--environment`, `--issued-at`, `--dry-run`. Module-level
   `if __name__ == "__main__"` blocks are for dev smoke tests only — not the production entry point.
 
 ## Logging & Observability

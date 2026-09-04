@@ -14,14 +14,14 @@ from odk_to_121.infra.data_types.output_types import Registration, RegistrationB
 MAX_REFERENCE_ID_LENGTH = 200
 
 
-def check_reference_ids(run_target_id: str, batch: RegistrationBatch) -> list[str]:
+def check_reference_ids(route_id: str, batch: RegistrationBatch) -> list[str]:
     errors = []
     for registration in batch.registrations:
         if not registration.reference_id:
-            errors.append(f"{run_target_id}: registration without referenceId")
+            errors.append(f"{route_id}: registration without referenceId")
         elif len(registration.reference_id) > MAX_REFERENCE_ID_LENGTH:
             errors.append(
-                f"{run_target_id}: referenceId longer than {MAX_REFERENCE_ID_LENGTH} characters "
+                f"{route_id}: referenceId longer than {MAX_REFERENCE_ID_LENGTH} characters "
                 f"({len(registration.reference_id)})"
             )
 
@@ -31,13 +31,13 @@ def check_reference_ids(run_target_id: str, batch: RegistrationBatch) -> list[st
         if count > 1
     ]
     errors.extend(
-        f"{run_target_id}: duplicate referenceId {reference_id}" for reference_id in duplicates
+        f"{route_id}: duplicate referenceId {reference_id}" for reference_id in duplicates
     )
     return errors
 
 
 def check_required_attributes(
-    run_target_id: str, batch: RegistrationBatch, mappings: tuple[FieldMapping, ...]
+    route_id: str, batch: RegistrationBatch, mappings: tuple[FieldMapping, ...]
 ) -> list[str]:
     required = [mapping.attribute for mapping in mappings if mapping.required]
     errors = []
@@ -49,39 +49,39 @@ def check_required_attributes(
         ]
         if missing:
             errors.append(
-                f"{run_target_id}: registration {registration.reference_id} misses "
+                f"{route_id}: registration {registration.reference_id} misses "
                 f"required attributes {sorted(missing)}"
             )
     return errors
 
 
-def check_attribute_types(run_target_id: str, batch: RegistrationBatch) -> list[str]:
+def check_attribute_types(route_id: str, batch: RegistrationBatch) -> list[str]:
     errors = []
     for registration in batch.registrations:
         for attribute, value in registration.attributes.items():
             if value is not None and not isinstance(value, str | int | float | bool):
                 errors.append(
-                    f"{run_target_id}: registration {registration.reference_id} attribute "
+                    f"{route_id}: registration {registration.reference_id} attribute "
                     f"'{attribute}' has unsupported type {type(value).__name__}"
                 )
     return errors
 
 
-def check_program_id(run_target_id: str, batch: RegistrationBatch) -> list[str]:
+def check_program_id(route_id: str, batch: RegistrationBatch) -> list[str]:
     if batch.program_id <= 0:
-        return [f"{run_target_id}: invalid programId {batch.program_id}"]
+        return [f"{route_id}: invalid programId {batch.program_id}"]
     return []
 
 
 def check_batch(
-    run_target_id: str, batch: RegistrationBatch, mappings: tuple[FieldMapping, ...]
+    route_id: str, batch: RegistrationBatch, mappings: tuple[FieldMapping, ...]
 ) -> list[str]:
     """Run every integrity check and collect all errors."""
     return [
-        *check_program_id(run_target_id, batch),
-        *check_reference_ids(run_target_id, batch),
-        *check_required_attributes(run_target_id, batch, mappings),
-        *check_attribute_types(run_target_id, batch),
+        *check_program_id(route_id, batch),
+        *check_reference_ids(route_id, batch),
+        *check_required_attributes(route_id, batch, mappings),
+        *check_attribute_types(route_id, batch),
     ]
 
 

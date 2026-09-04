@@ -15,7 +15,7 @@ from odk_to_121.infra.data_types.config_types import (
     OutputMode,
     PipelineRunConfig,
     ProgramConfig,
-    RunTargetConfig,
+    RouteConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,12 +59,12 @@ class ConfigReader:
                 )
                 return False
 
-            run_targets = self._parse_run_targets(body, environment)
-            if run_targets is None:
+            routes = self._parse_routes(body, environment)
+            if routes is None:
                 return False
             self.run_configs[environment] = PipelineRunConfig(
                 environment=environment,
-                run_targets=run_targets,
+                routes=routes,
             )
 
         logger.info("Loaded config %s with environments %s", path, sorted(self.run_configs))
@@ -75,37 +75,35 @@ class ConfigReader:
             raise ConfigError(f"Environment '{environment}' is not defined in the config")
         return self.run_configs[environment]
 
-    def _parse_run_targets(
-        self, body: Any, environment: Environment
-    ) -> dict[str, RunTargetConfig] | None:
-        if not isinstance(body, dict) or not isinstance(body.get("run_targets"), list):
-            logger.error("Environment '%s': 'run_targets' must be a list", environment)
+    def _parse_routes(self, body: Any, environment: Environment) -> dict[str, RouteConfig] | None:
+        if not isinstance(body, dict) or not isinstance(body.get("routes"), list):
+            logger.error("Environment '%s': 'routes' must be a list", environment)
             return None
 
-        run_targets: dict[str, RunTargetConfig] = {}
-        for raw_target in body["run_targets"]:
-            run_target = self._parse_run_target(raw_target, environment)
-            if run_target is None:
+        routes: dict[str, RouteConfig] = {}
+        for raw_route in body["routes"]:
+            route = self._parse_route(raw_route, environment)
+            if route is None:
                 return None
-            if run_target.run_target_id in run_targets:
+            if route.route_id in routes:
                 logger.error(
-                    "Environment '%s': duplicate run target id '%s'",
+                    "Environment '%s': duplicate route id '%s'",
                     environment,
-                    run_target.run_target_id,
+                    route.route_id,
                 )
                 return None
-            run_targets[run_target.run_target_id] = run_target
+            routes[route.route_id] = route
 
-        if not run_targets:
-            logger.error("Environment '%s': no run targets defined", environment)
+        if not routes:
+            logger.error("Environment '%s': no routes defined", environment)
             return None
-        return run_targets
+        return routes
 
-    def _parse_run_target(self, raw: Any, environment: Environment) -> RunTargetConfig | None:
+    def _parse_route(self, raw: Any, environment: Environment) -> RouteConfig | None:
         if not isinstance(raw, dict) or not raw.get("id"):
-            logger.error("Environment '%s': every run target needs an 'id'", environment)
+            logger.error("Environment '%s': every route needs an 'id'", environment)
             return None
-        run_target_id = str(raw["id"])
+        route_id = str(raw["id"])
 
         try:
             data_source = DataSource(raw.get("data_source"))
@@ -115,11 +113,11 @@ class ConfigReader:
             output_mode, output_path = _parse_output(raw.get("output"))
             required_attributes = _parse_required_attributes(raw.get("required_attributes"))
         except (ValueError, TypeError, KeyError) as exc:
-            logger.error("Environment '%s', run target '%s': %s", environment, run_target_id, exc)
+            logger.error("Environment '%s', route '%s': %s", environment, route_id, exc)
             return None
 
-        return RunTargetConfig(
-            run_target_id=run_target_id,
+        return RouteConfig(
+            route_id=route_id,
             data_source=data_source,
             odk=odk,
             program=program,

@@ -35,10 +35,10 @@ class ProgramConfig:
 
 
 @dataclass(frozen=True)
-class RunTargetConfig:
+class RouteConfig:
     """One ODK form -> one 121 program."""
 
-    run_target_id: str
+    route_id: str
     data_source: DataSource
     odk: OdkFormConfig
     program: ProgramConfig
@@ -53,4 +53,4 @@ class RunTargetConfig:
 @dataclass(frozen=True)
 class PipelineRunConfig:
     environment: Environment
-    run_targets: dict[str, RunTargetConfig]
+    routes: dict[str, RouteConfig]

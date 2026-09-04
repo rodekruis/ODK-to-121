@@ -4,7 +4,7 @@ from odk_to_121.infra.data_provider import DataProvider, LoadedDataSource
 from odk_to_121.infra.data_submitter import DataSubmitter
 from odk_to_121.infra.data_types.config_types import DataSource
 from odk_to_121.infra.data_types.domain_types import OdkSubmissionSet, RegistrationMapping
-from odk_to_121.transform import build_registrations
+from odk_to_121.transform import transform_submissions
 
 
 def _provider(submission_set: OdkSubmissionSet) -> DataProvider:
@@ -16,7 +16,7 @@ def _provider(submission_set: OdkSubmissionSet) -> DataProvider:
 
 
 def _submitter() -> DataSubmitter:
-    return DataSubmitter(run_target_id="form-a", program_id=1, source_form_id="registration_form")
+    return DataSubmitter(route_id="form-a", program_id=1, source_form_id="registration_form")
 
 
 def test_maps_submissions_to_registrations(
@@ -24,7 +24,7 @@ def test_maps_submissions_to_registrations(
 ) -> None:
     submitter = _submitter()
 
-    build_registrations(_provider(submission_set), submitter, "form-a", mapping)
+    transform_submissions(_provider(submission_set), submitter, "form-a", mapping)
 
     assert [r.reference_id for r in submitter.registrations] == [
         "uuid:00000000-0000-0000-0000-000000000001",
@@ -57,7 +57,7 @@ def test_unanswered_questions_become_none(
     )
     submitter = _submitter()
 
-    build_registrations(_provider(stripped), submitter, "form-a", mapping)
+    transform_submissions(_provider(stripped), submitter, "form-a", mapping)
 
     assert submitter.registrations[0].attributes["householdSize"] is None
     assert submitter.registrations[0].attributes["phoneNumber"] is None
@@ -66,7 +66,7 @@ def test_unanswered_questions_become_none(
 def test_empty_submission_set_produces_no_registrations(mapping: RegistrationMapping) -> None:
     submitter = _submitter()
 
-    build_registrations(
+    transform_submissions(
         _provider(OdkSubmissionSet(project_id=1, form_id="registration_form")),
         submitter,
         "form-a",

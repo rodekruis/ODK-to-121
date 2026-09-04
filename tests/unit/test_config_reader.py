@@ -12,7 +12,7 @@ REPO_CONFIG = Path("src/odk_to_121/infra/configs/registrations.yaml")
 VALID_CONFIG = """
 environments:
   debug:
-    run_targets:
+    routes:
       - id: form-a
         data_source: dummy_submissions
         odk:
@@ -38,11 +38,11 @@ def test_loads_valid_config(tmp_path: Path) -> None:
 
     assert reader.load(_write(tmp_path, VALID_CONFIG))
 
-    run_target = reader.get_run_config(Environment.DEBUG).run_targets["form-a"]
-    assert run_target.data_source is DataSource.DUMMY_SUBMISSIONS
-    assert run_target.output_mode is OutputMode.LOCAL
-    assert run_target.program.program_id == 2
-    assert run_target.required_attributes == ("fullName",)
+    route = reader.get_run_config(Environment.DEBUG).routes["form-a"]
+    assert route.data_source is DataSource.DUMMY_SUBMISSIONS
+    assert route.output_mode is OutputMode.LOCAL
+    assert route.program.program_id == 2
+    assert route.required_attributes == ("fullName",)
 
 
 def test_repo_config_is_valid() -> None:

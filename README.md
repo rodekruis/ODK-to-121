@@ -7,8 +7,8 @@ ETL pipeline that pulls form submissions from **ODK Central** and pushes them to
 ## Design principle
 
 **ODK is a data collection tool. 121 is where data is managed.** All cleaning, validation,
-triage and correction happen in the 121 portal, so this pipeline is deliberately simple:
-sends every new ODK submission to 121 and stops. It does not filter submissions and never
+triage and correction happen in the 121 portal, so this pipeline is deliberately simple: it
+loads every new ODK submission into 121 and stops. It does not filter submissions and never
 updates a 121 registration.
 
 ## How it works
@@ -29,9 +29,9 @@ ODK Central (OData)  ──extract──▶  OdkSubmission  ──transform─�
   using the synced schema and derives a deterministic `referenceId` from the ODK instance id.
   Every submission in the form is mapped.
 - **Load** — `infra/data_submitter.py` runs all integrity checks first and aborts on any error,
-  then dispatches: `local` writes an atomic JSON file, `121` creates the registrations 121 does
-  not have yet in one batched request. Existing registrations are left untouched, because 121
-  owns the record once it has one.
+  then dispatches by output mode: `local` writes an atomic JSON file, `121` creates the
+  registrations the program does not have yet in one batched request. Existing registrations
+  are left untouched, because 121 owns the record once it has one.
 
 Because the `referenceId` is derived from the ODK instance id, reruns only ever add what is
 missing.
@@ -78,15 +78,16 @@ The `debug` target uses dummy submissions and writes to `output/`, so it needs n
 | `--config` | Path to the YAML config |
 | `--environment` | `debug`, `test` or `prod` |
 | `--issued-at` | Override the run timestamp (backfills) |
-| `--dry-run` | Extract, transform and validate, but send nothing |
+| `--dry-run` | Extract, transform and validate, but load nothing |
 | `--verbose` | Log at DEBUG level |
 
 Exit codes: `0` success, `1` pipeline errors, `2` config/credential error.
 
 ## Configuration
 
-`src/odk_to_121/infra/configs/registrations.yaml` defines, per run target, which ODK form feeds
-which 121 program. Field mappings are **not** configured — they are derived from the form:
+`src/odk_to_121/infra/configs/registrations.yaml` defines, per environment, a list of **routes** —
+each one ODK form feeding one 121 program. Field mappings are **not** configured; they are
+derived from the form:
 
 ```yaml
 odk:
@@ -118,8 +119,8 @@ uv run ruff check . && uv run ty check
 - The ODK form id and project id in the config are placeholders — replace them with the real form.
 - `dummy_data.py` provides the form schema and submissions for the `debug` target; swap it for a
   real ODK test form when available.
-- The 121 read endpoint for existing attributes (`GET /api/programs/{id}/attributes`) and the
-  PATCH contract (audit `reason`) should both be verified against the target instance.
+- The 121 read endpoint for existing attributes (`GET /api/programs/{id}/attributes`) should be
+  verified against the target instance.
 - Select questions land as raw choice codes. If caseworkers need labels, schema sync has to read
   the XForm definition instead of the fields endpoint.
 

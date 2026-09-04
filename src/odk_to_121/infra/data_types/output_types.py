@@ -58,7 +58,7 @@ class Registration:
 
 @dataclass
 class RegistrationBatch:
-    """All registrations produced for one run target in one run."""
+    """All registrations produced for one route in one run."""
 
     program_id: int
     issued_at: datetime

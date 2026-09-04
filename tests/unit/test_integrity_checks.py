@@ -52,7 +52,7 @@ def test_detects_invalid_program_id(field_mappings: tuple[FieldMapping, ...]) ->
     assert any("invalid programId" in error for error in errors)
 
 
-def test_errors_are_prefixed_with_the_run_target() -> None:
+def test_errors_are_prefixed_with_the_route() -> None:
     errors = check_batch("form-a", _batch(Registration(reference_id="")), ())
 
     assert errors and all(error.startswith("form-a: ") for error in errors)

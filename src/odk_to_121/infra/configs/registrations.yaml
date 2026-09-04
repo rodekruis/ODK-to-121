@@ -2,7 +2,7 @@
 # schema at run time and created in 121 before any registration is submitted.
 environments:
   debug:
-    run_targets:
+    routes:
       - id: registration-form
         data_source: dummy_submissions
         odk:
@@ -20,7 +20,7 @@ environments:
           path: output/
 
   test:
-    run_targets:
+    routes:
       - id: registration-form
         data_source: odk_submissions
         odk:
@@ -36,7 +36,7 @@ environments:
           path: output/
 
   prod:
-    run_targets:
+    routes:
       - id: registration-form
         data_source: odk_submissions
         odk:

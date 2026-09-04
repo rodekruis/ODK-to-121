@@ -10,7 +10,7 @@ from odk_to_121.infra.data_types.config_types import (
     OdkFormConfig,
     OutputMode,
     ProgramConfig,
-    RunTargetConfig,
+    RouteConfig,
 )
 from odk_to_121.infra.schema_sync import sync_program_attributes
 from odk_to_121.infra.utils.client_121 import Client121
@@ -18,9 +18,9 @@ from odk_to_121.infra.utils.client_121 import Client121
 BASE_URL = "https://121.test"
 
 
-def _run_target() -> RunTargetConfig:
-    return RunTargetConfig(
-        run_target_id="form-a",
+def _run_route() -> RouteConfig:
+    return RouteConfig(
+        route_id="form-a",
         data_source=DataSource.DUMMY_SUBMISSIONS,
         odk=OdkFormConfig(project_id=1, form_id="registration_form"),
         program=ProgramConfig(program_id=1),
@@ -47,7 +47,7 @@ def test_creates_only_the_attributes_121_is_missing() -> None:
         f"{BASE_URL}/api/programs/1/registration-attributes", json={}, status=201
     )
 
-    plan, errors = sync_program_attributes(_run_target(), None, _client())
+    plan, errors = sync_program_attributes(_run_route(), None, _client())
 
     assert errors == []
     assert plan is not None
@@ -84,7 +84,7 @@ def test_nothing_is_created_when_the_program_is_already_in_sync() -> None:
         f"{BASE_URL}/api/programs/1/registration-attributes", json={}, status=201
     )
 
-    plan, errors = sync_program_attributes(_run_target(), None, _client())
+    plan, errors = sync_program_attributes(_run_route(), None, _client())
 
     assert errors == []
     assert plan is not None
@@ -102,7 +102,7 @@ def test_failed_creation_is_reported_and_blocks_the_run() -> None:
         status=400,
     )
 
-    plan, errors = sync_program_attributes(_run_target(), None, _client())
+    plan, errors = sync_program_attributes(_run_route(), None, _client())
 
     assert plan is None
     assert len(errors) == 3
@@ -111,7 +111,7 @@ def test_failed_creation_is_reported_and_blocks_the_run() -> None:
 
 @pytest.mark.integration
 def test_local_output_derives_the_plan_without_calling_121() -> None:
-    plan, errors = sync_program_attributes(_run_target(), None, None)
+    plan, errors = sync_program_attributes(_run_route(), None, None)
 
     assert errors == []
     assert plan is not None

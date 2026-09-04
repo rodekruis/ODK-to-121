@@ -16,12 +16,12 @@ from dataclasses import dataclass
 
 import requests
 
-from odk_to_121.infra.data_types.config_types import RunTargetConfig
+from odk_to_121.infra.data_types.config_types import RouteConfig
 from odk_to_121.infra.data_types.domain_types import FieldMapping, OdkFormField, OdkFormSchema
 from odk_to_121.infra.data_types.output_types import AttributeType, ProgramAttribute
 from odk_to_121.infra.utils.client_121 import Client121
 from odk_to_121.infra.utils.client_odk import ClientOdk
-from odk_to_121.infra.utils.data_fetchers import load_form_schema
+from odk_to_121.infra.utils.extract import extract_form_schema
 from odk_to_121.infra.utils.progress import with_progress
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ class SchemaPlan:
 
 
 def derive_schema_plan(
-    run_target_id: str,
+    route_id: str,
     schema: OdkFormSchema,
     required_attributes: tuple[str, ...] = (),
 ) -> tuple[SchemaPlan, list[str]]:
@@ -138,7 +138,7 @@ def derive_schema_plan(
     for form_field in schema.fields:
         if form_field.type in UNSUPPORTED_ODK_TYPES:
             errors.append(
-                f"{run_target_id}: field '{form_field.path}' is a {form_field.type}, "
+                f"{route_id}: field '{form_field.path}' is a {form_field.type}, "
                 f"which 121 cannot store"
             )
             continue
@@ -148,7 +148,7 @@ def derive_schema_plan(
 
         if form_field.name in FORBIDDEN_ATTRIBUTES:
             errors.append(
-                f"{run_target_id}: field '{form_field.path}' uses '{form_field.name}', "
+                f"{route_id}: field '{form_field.path}' uses '{form_field.name}', "
                 f"which 121 generates itself"
             )
             continue
@@ -157,7 +157,7 @@ def derive_schema_plan(
         if attribute_type is None:
             logger.warning(
                 "%s: skipping field '%s' of unmapped type '%s'",
-                run_target_id,
+                route_id,
                 form_field.path,
                 form_field.type,
             )
@@ -166,7 +166,7 @@ def derive_schema_plan(
         # 121 keys attributes on the leaf name, so two groups cannot share one.
         if form_field.name in claimed_by:
             errors.append(
-                f"{run_target_id}: fields '{claimed_by[form_field.name]}' and '{form_field.path}' "
+                f"{route_id}: fields '{claimed_by[form_field.name]}' and '{form_field.path}' "
                 f"both map to attribute '{form_field.name}'"
             )
             continue
@@ -183,36 +183,34 @@ def derive_schema_plan(
             attributes.append(ProgramAttribute(name=form_field.name, type=attribute_type))
 
     errors.extend(
-        f"{run_target_id}: required attribute '{name}' has no field in ODK form '{schema.form_id}'"
+        f"{route_id}: required attribute '{name}' has no field in ODK form '{schema.form_id}'"
         for name in required_attributes
         if name not in claimed_by
     )
     if not mappings and not errors:
-        errors.append(f"{run_target_id}: ODK form '{schema.form_id}' has no usable fields")
+        errors.append(f"{route_id}: ODK form '{schema.form_id}' has no usable fields")
 
     return SchemaPlan(tuple(mappings), tuple(attributes)), errors
 
 
 def sync_program_attributes(
-    run_target: RunTargetConfig,
+    route: RouteConfig,
     client_odk: ClientOdk | None,
     client_121: Client121 | None,
 ) -> tuple[SchemaPlan | None, list[str]]:
     """Read the ODK form, create whatever 121 is missing, and return the mapping to use."""
     try:
-        schema = load_form_schema(run_target, client_odk)
+        schema = extract_form_schema(route, client_odk)
     except Exception as exc:  # noqa: BLE001 - report, never crash the run
-        return None, [f"{run_target.run_target_id}: could not read the ODK form schema: {exc}"]
+        return None, [f"{route.route_id}: could not read the ODK form schema: {exc}"]
 
-    plan, errors = derive_schema_plan(
-        run_target.run_target_id, schema, run_target.required_attributes
-    )
+    plan, errors = derive_schema_plan(route.route_id, schema, route.required_attributes)
     if errors:
         return None, errors
 
     logger.info(
         "%s: ODK form '%s' maps to %d attributes",
-        run_target.run_target_id,
+        route.route_id,
         schema.form_id,
         len(plan.mappings),
     )
@@ -220,64 +218,60 @@ def sync_program_attributes(
         return plan, []
 
     try:
-        existing = client_121.get_registration_attributes(run_target.program.program_id)
+        existing = client_121.get_registration_attributes(route.program.program_id)
     except (requests.RequestException, ValueError) as exc:
-        return None, [
-            f"{run_target.run_target_id}: could not list 121 registration attributes: {exc}"
-        ]
+        return None, [f"{route.route_id}: could not list 121 registration attributes: {exc}"]
 
-    _warn_on_type_drift(run_target.run_target_id, plan.attributes, existing)
+    _warn_on_type_drift(route.route_id, plan.attributes, existing)
 
     missing = [attribute for attribute in plan.attributes if attribute.name not in existing]
     if not missing:
         logger.info(
             "%s: program %d already has every attribute",
-            run_target.run_target_id,
-            run_target.program.program_id,
+            route.route_id,
+            route.program.program_id,
         )
         return plan, []
 
-    creation_errors = _create_attributes(run_target, client_121, missing)
+    creation_errors = _create_attributes(route, client_121, missing)
     if creation_errors:
         return None, creation_errors
     return plan, []
 
 
 def _create_attributes(
-    run_target: RunTargetConfig, client: Client121, attributes: list[ProgramAttribute]
+    route: RouteConfig, client: Client121, attributes: list[ProgramAttribute]
 ) -> list[str]:
     # 121 has no batch endpoint, so a wide form means one slow request per attribute.
     logger.info(
         "%s: creating %d registration attributes, one request each",
-        run_target.run_target_id,
+        route.route_id,
         len(attributes),
     )
-    progress = with_progress(attributes, f"{run_target.run_target_id}: creating attributes", "attr")
+    progress = with_progress(attributes, f"{route.route_id}: creating attributes", "attr")
 
     errors: list[str] = []
     for attribute in progress:
         try:
             response = client.create_registration_attribute(
-                run_target.program.program_id, attribute.to_dict()
+                route.program.program_id, attribute.to_dict()
             )
         except requests.RequestException as exc:
-            errors.append(
-                f"{run_target.run_target_id}: creating attribute '{attribute.name}' failed: {exc}"
-            )
+            errors.append(f"{route.route_id}: creating attribute '{attribute.name}' failed: {exc}")
             continue
         if response.status_code not in range(200, 300):
             errors.append(
-                f"{run_target.run_target_id}: 121 returned {response.status_code} creating "
+                f"{route.route_id}: 121 returned {response.status_code} creating "
                 f"attribute '{attribute.name}': {response.text[:500]}"
             )
     created = len(attributes) - len(errors)
     if created:
-        logger.info("%s: created %d registration attributes", run_target.run_target_id, created)
+        logger.info("%s: created %d registration attributes", route.route_id, created)
     return errors
 
 
 def _warn_on_type_drift(
-    run_target_id: str, attributes: tuple[ProgramAttribute, ...], existing: dict[str, str]
+    route_id: str, attributes: tuple[ProgramAttribute, ...], existing: dict[str, str]
 ) -> None:
     """Existing attributes are never modified, so a changed ODK type only gets logged."""
     for attribute in attributes:
@@ -286,7 +280,7 @@ def _warn_on_type_drift(
             logger.warning(
                 "%s: attribute '%s' is '%s' in 121 but the ODK form now implies '%s'; "
                 "leaving it unchanged",
-                run_target_id,
+                route_id,
                 attribute.name,
                 current,
                 attribute.type.value,

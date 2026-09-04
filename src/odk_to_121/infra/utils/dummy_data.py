@@ -1,4 +1,4 @@
-"""Dummy form and submissions for the `debug` run target. TODO: use a real ODK test form."""
+"""Dummy form and submissions for the `debug` environment. TODO: use a real ODK test form."""
 
 from __future__ import annotations
 
