@@ -12,11 +12,11 @@ import click
 from dotenv import load_dotenv
 
 from odk_to_121.infra.config_reader import ConfigError
-from odk_to_121.infra.data_types.config_types import RunTarget
+from odk_to_121.infra.data_types.config_types import Environment
 from odk_to_121.infra.orchestrator import run_pipeline
-from odk_to_121.infra.utils.api_client import Api121Error
+from odk_to_121.infra.utils.client_121 import Client121Error
+from odk_to_121.infra.utils.client_odk import ClientOdkError
 from odk_to_121.infra.utils.logging_config import configure_logging
-from odk_to_121.infra.utils.odk_client import OdkClientError
 
 EXIT_SUCCESS = 0
 EXIT_PIPELINE_ERROR = 1
@@ -33,10 +33,10 @@ logger = logging.getLogger(__name__)
     help="Path to the YAML configuration file.",
 )
 @click.option(
-    "--run-target",
+    "--environment",
     required=True,
-    type=click.Choice([t.value for t in RunTarget], case_sensitive=False),
-    help="Which run target to execute.",
+    type=click.Choice([e.value for e in Environment], case_sensitive=False),
+    help="Which environment to run: debug, test or prod.",
 )
 @click.option(
     "--issued-at",
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 @click.option("--verbose", is_flag=True, help="Log at DEBUG level.")
 def cli(
     config: Path,
-    run_target: str,
+    environment: str,
     issued_at: datetime | None,
     dry_run: bool,
     verbose: bool,
@@ -64,11 +64,11 @@ def cli(
     try:
         errors = run_pipeline(
             config,
-            RunTarget(run_target.lower()),
+            Environment(environment.lower()),
             issued_at=issued_at,
             dry_run=dry_run,
         )
-    except (ConfigError, OdkClientError, Api121Error) as exc:
+    except (ConfigError, ClientOdkError, Client121Error) as exc:
         logger.error("Configuration error: %s", exc)
         sys.exit(EXIT_CONFIG_ERROR)
 

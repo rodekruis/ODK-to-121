@@ -61,13 +61,39 @@ class OdkSubmissionSet:
 
 
 @dataclass(frozen=True)
+class OdkFormField:
+    """One field of an ODK form schema, from the Central `/fields` endpoint."""
+
+    name: str
+    path: str
+    type: str
+
+    @classmethod
+    def from_api(cls, raw: dict[str, Any]) -> OdkFormField:
+        # Paths arrive as '/group/field'; submissions flatten to 'group/field'.
+        path = str(raw.get("path") or "").lstrip("/")
+        name = str(raw.get("name") or "")
+        if not path or not name:
+            raise ValueError(f"form field is missing 'name' or 'path': {sorted(raw)}")
+        return cls(name=name, path=path, type=str(raw.get("type") or "unknown"))
+
+
+@dataclass(frozen=True)
+class OdkFormSchema:
+    """The flat field schema of one ODK form."""
+
+    project_id: int
+    form_id: str
+    fields: tuple[OdkFormField, ...] = ()
+
+
+@dataclass(frozen=True)
 class FieldMapping:
     """Maps one flattened ODK field onto one 121 registration attribute."""
 
     odk_field: str
     attribute: str
     required: bool = False
-    default: Scalar = None
 
 
 @dataclass(frozen=True)
@@ -78,7 +104,6 @@ class RegistrationMapping:
     reference_id_field: str
     fields: tuple[FieldMapping, ...]
     preferred_language: str | None = None
-    skip_review_states: tuple[str, ...] = ()
 
 
 def _flatten(values: dict[str, Any], prefix: str = "") -> dict[str, Scalar]:

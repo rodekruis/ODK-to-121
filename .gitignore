@@ -219,5 +219,6 @@ __marimo__/
 
 # Pipeline artefacts
 output/
+forms/
 data/
 .cache/

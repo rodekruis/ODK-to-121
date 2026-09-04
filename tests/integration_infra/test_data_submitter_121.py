@@ -6,19 +6,19 @@ import pytest
 import responses
 
 from odk_to_121.infra.data_submitter import DataSubmitter
-from odk_to_121.infra.data_types.config_types import OutputMode, SubmissionMode
+from odk_to_121.infra.data_types.config_types import OutputMode
 from odk_to_121.infra.data_types.domain_types import FieldMapping
-from odk_to_121.infra.utils.api_client import Api121Client
+from odk_to_121.infra.utils.client_121 import Client121
 
 BASE_URL = "https://121.test"
 
 
 def _submitter() -> DataSubmitter:
     submitter = DataSubmitter(
-        entity_id="form-a",
+        run_target_id="form-a",
         program_id=1,
         source_form_id="registration_form",
-        api_client=Api121Client(BASE_URL, "user", "secret"),
+        client_121=Client121(BASE_URL, "user", "secret"),
     )
     submitter.create_registration("uuid:1", {"fullName": "Ada", "phoneNumber": "3160"})
     submitter.create_registration("uuid:2", {"fullName": "Grace", "phoneNumber": "3161"})
@@ -35,7 +35,9 @@ def mappings() -> tuple[FieldMapping, ...]:
 
 @pytest.mark.integration
 @responses.activate
-def test_upsert_creates_new_and_patches_existing(mappings: tuple[FieldMapping, ...]) -> None:
+def test_creates_only_registrations_121_does_not_have(
+    mappings: tuple[FieldMapping, ...],
+) -> None:
     responses.post(f"{BASE_URL}/api/users/login", json={"access_token": "t"}, status=201)
     responses.get(
         f"{BASE_URL}/api/programs/1/registrations",
@@ -43,24 +45,40 @@ def test_upsert_creates_new_and_patches_existing(mappings: tuple[FieldMapping, .
         status=200,
     )
     create = responses.post(f"{BASE_URL}/api/programs/1/registrations", json={}, status=201)
-    patch = responses.patch(f"{BASE_URL}/api/programs/1/registrations/uuid:2", json={}, status=200)
 
-    errors = _submitter().send_all(OutputMode.API, "", mappings, SubmissionMode.UPSERT)
+    errors = _submitter().send_all(OutputMode.PLATFORM_121, "", mappings)
 
     assert errors == []
     body = create.calls[0].request.body
     assert isinstance(body, str | bytes)
     assert json.loads(body) == [{"referenceId": "uuid:1", "fullName": "Ada", "phoneNumber": "3160"}]
-    assert patch.call_count == 1
+
+
+@pytest.mark.integration
+@responses.activate
+def test_existing_registrations_are_never_modified(mappings: tuple[FieldMapping, ...]) -> None:
+    responses.post(f"{BASE_URL}/api/users/login", json={"access_token": "t"}, status=201)
+    responses.get(
+        f"{BASE_URL}/api/programs/1/registrations",
+        json={"data": [{"referenceId": "uuid:1"}, {"referenceId": "uuid:2"}]},
+        status=200,
+    )
+    create = responses.post(f"{BASE_URL}/api/programs/1/registrations", json={}, status=201)
+
+    errors = _submitter().send_all(OutputMode.PLATFORM_121, "", mappings)
+
+    assert errors == []
+    assert create.call_count == 0
 
 
 @pytest.mark.integration
 @responses.activate
 def test_api_error_is_reported_not_raised(mappings: tuple[FieldMapping, ...]) -> None:
     responses.post(f"{BASE_URL}/api/users/login", json={"access_token": "t"}, status=201)
+    responses.get(f"{BASE_URL}/api/programs/1/registrations", json={"data": []}, status=200)
     responses.post(f"{BASE_URL}/api/programs/1/registrations", json={"message": "bad"}, status=400)
 
-    errors = _submitter().send_all(OutputMode.API, "", mappings, SubmissionMode.CREATE)
+    errors = _submitter().send_all(OutputMode.PLATFORM_121, "", mappings)
 
     assert len(errors) == 1
     assert "returned 400" in errors[0]
@@ -72,7 +90,7 @@ def test_nothing_is_sent_when_integrity_checks_fail(mappings: tuple[FieldMapping
     submitter = _submitter()
     submitter.create_registration("uuid:3", {"fullName": "Missing phone"})
 
-    errors = submitter.send_all(OutputMode.API, "", mappings, SubmissionMode.CREATE)
+    errors = submitter.send_all(OutputMode.PLATFORM_121, "", mappings)
 
     assert len(errors) == 1
     assert "required attributes" in errors[0]

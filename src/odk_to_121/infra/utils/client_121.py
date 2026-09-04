@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 PAGE_SIZE = 1000
 
 
-class Api121Error(RuntimeError):
+class Client121Error(RuntimeError):
     """Raised when the 121 platform cannot be reached or authenticated against."""
 
 
-class Api121Client:
+class Client121:
     """Client for the 121 platform. One instance per run."""
 
     def __init__(
@@ -34,12 +34,12 @@ class Api121Client:
         self._logged_in = False
 
     @classmethod
-    def from_env(cls) -> Api121Client:
+    def from_env(cls) -> Client121:
         base_url = os.environ.get("URL_121")
         username = os.environ.get("USERNAME_121")
         password = os.environ.get("PASSWORD_121")
         if not (base_url and username and password):
-            raise Api121Error("Missing URL_121, USERNAME_121 or PASSWORD_121")
+            raise Client121Error("Missing URL_121, USERNAME_121 or PASSWORD_121")
         return cls(base_url, username, password)
 
     def login(self) -> None:
@@ -50,7 +50,7 @@ class Api121Client:
             timeout=self.timeout,
         )
         if response.status_code not in range(200, 300):
-            raise Api121Error(f"121 login failed with status {response.status_code}")
+            raise Client121Error(f"121 login failed with status {response.status_code}")
         self._logged_in = True
         logger.info("Authenticated against 121 at %s", self.base_url)
 
@@ -75,6 +75,32 @@ class Api121Client:
         logger.info("Program %d already holds %d registrations", program_id, len(reference_ids))
         return reference_ids
 
+    def get_registration_attributes(self, program_id: int) -> dict[str, str]:
+        """Return the program's registration attributes as name -> type."""
+        self._ensure_login()
+        response = self.session.get(
+            f"{self.base_url}/api/programs/{program_id}/attributes", timeout=self.timeout
+        )
+        response.raise_for_status()
+        attributes = {
+            str(record["name"]): str(record.get("type") or "")
+            for record in _extract_records(response.json())
+            if record.get("name")
+        }
+        logger.info("Program %d has %d registration attributes", program_id, len(attributes))
+        return attributes
+
+    def create_registration_attribute(
+        self, program_id: int, payload: dict[str, object]
+    ) -> requests.Response:
+        """Create one registration attribute; the endpoint takes a single object."""
+        self._ensure_login()
+        return self.session.post(
+            f"{self.base_url}/api/programs/{program_id}/registration-attributes",
+            json=payload,
+            timeout=self.timeout,
+        )
+
     def create_registrations(
         self, program_id: int, payload: list[dict[str, Scalar]]
     ) -> requests.Response:
@@ -83,18 +109,6 @@ class Api121Client:
         return self.session.post(
             f"{self.base_url}/api/programs/{program_id}/registrations",
             json=payload,
-            timeout=self.timeout,
-        )
-
-    def update_registration(
-        self, program_id: int, reference_id: str, attributes: dict[str, Scalar], reason: str
-    ) -> requests.Response:
-        """Patch an existing registration (121 requires an audit reason)."""
-        self._ensure_login()
-        return self.session.patch(
-            f"{self.base_url}/api/programs/{program_id}/registrations/{reference_id}",
-            json={"data": attributes},
-            params={"reason": reason},
             timeout=self.timeout,
         )
 

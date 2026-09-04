@@ -11,15 +11,13 @@ from pathlib import Path
 
 import requests
 
-from odk_to_121.infra.data_types.config_types import OutputMode, SubmissionMode
+from odk_to_121.infra.data_types.config_types import OutputMode
 from odk_to_121.infra.data_types.domain_types import FieldMapping, Scalar
 from odk_to_121.infra.data_types.output_types import Registration, RegistrationBatch
-from odk_to_121.infra.utils.api_client import Api121Client
+from odk_to_121.infra.utils.client_121 import Client121
 from odk_to_121.infra.utils.integrity_checks import check_batch
 
 logger = logging.getLogger(__name__)
-
-UPDATE_REASON = "Synchronised from ODK submission"
 
 
 class DataSubmitter:
@@ -27,15 +25,15 @@ class DataSubmitter:
 
     def __init__(
         self,
-        entity_id: str,
+        run_target_id: str,
         program_id: int,
         source_form_id: str,
         *,
         issued_at: datetime | None = None,
-        api_client: Api121Client | None = None,
+        client_121: Client121 | None = None,
     ):
-        self.entity_id = entity_id
-        self.api_client = api_client
+        self.run_target_id = run_target_id
+        self.client_121 = client_121
         self._batch = RegistrationBatch(
             program_id=program_id,
             issued_at=issued_at or datetime.now(UTC),
@@ -62,35 +60,34 @@ class DataSubmitter:
         )
 
     def validate(self, mappings: tuple[FieldMapping, ...]) -> list[str]:
-        return check_batch(self.entity_id, self._batch, mappings)
+        return check_batch(self.run_target_id, self._batch, mappings)
 
     def send_all(
         self,
         output_mode: OutputMode,
         output_path: str,
         mappings: tuple[FieldMapping, ...],
-        submission_mode: SubmissionMode = SubmissionMode.UPSERT,
     ) -> list[str]:
         """Validate everything, then dispatch. All-or-nothing."""
         errors = self.validate(mappings)
         if errors:
-            logger.error("%s: integrity checks failed (%d)", self.entity_id, len(errors))
+            logger.error("%s: integrity checks failed (%d)", self.run_target_id, len(errors))
             return errors
 
         if not self._batch.registrations:
-            logger.info("%s: nothing to submit", self.entity_id)
+            logger.info("%s: nothing to submit", self.run_target_id)
             return []
 
         match output_mode:
             case OutputMode.LOCAL:
                 return self._write_to_file(output_path)
-            case OutputMode.API:
-                return self._send_to_api(submission_mode)
+            case OutputMode.PLATFORM_121:
+                return self._send_to_121()
 
     def _write_to_file(self, output_path: str) -> list[str]:
         """Write the batch to a timestamped directory, atomically."""
         stamp = self._batch.issued_at.strftime("%Y%m%dT%H%M%SZ")
-        directory = Path(output_path) / self.entity_id / stamp
+        directory = Path(output_path) / self.run_target_id / stamp
         directory.mkdir(parents=True, exist_ok=True)
         target = directory / "registrations.json"
 
@@ -102,68 +99,43 @@ class DataSubmitter:
                 tmp_path = tmp.name
             shutil.move(tmp_path, target)
         except OSError as exc:
-            return [f"{self.entity_id}: could not write output to {target}: {exc}"]
+            return [f"{self.run_target_id}: could not write output to {target}: {exc}"]
 
         logger.info(
-            "%s: wrote %d registrations to %s", self.entity_id, len(self.registrations), target
+            "%s: wrote %d registrations to %s", self.run_target_id, len(self.registrations), target
         )
         return []
 
-    def _send_to_api(self, submission_mode: SubmissionMode) -> list[str]:
-        client = self.api_client
+    def _send_to_121(self) -> list[str]:
+        """Create the registrations 121 does not have yet; existing ones are left untouched."""
+        client = self.client_121
         if client is None:
-            return [f"{self.entity_id}: no 121 client configured for API output"]
+            return [f"{self.run_target_id}: no 121 client configured for API output"]
 
-        to_create = self.registrations
-        to_update: list[Registration] = []
-        if submission_mode is SubmissionMode.UPSERT:
-            try:
-                existing = client.get_reference_ids(self._batch.program_id)
-            except (requests.RequestException, ValueError) as exc:
-                return [f"{self.entity_id}: could not list existing registrations: {exc}"]
-            to_create = [r for r in self.registrations if r.reference_id not in existing]
-            to_update = [r for r in self.registrations if r.reference_id in existing]
+        try:
+            existing = client.get_reference_ids(self._batch.program_id)
+        except (requests.RequestException, ValueError) as exc:
+            return [f"{self.run_target_id}: could not list existing registrations: {exc}"]
 
-        return [*self._create(client, to_create), *self._update(client, to_update)]
+        to_create = [r for r in self.registrations if r.reference_id not in existing]
+        skipped = len(self.registrations) - len(to_create)
+        if skipped:
+            logger.info("%s: skipped %d registrations already in 121", self.run_target_id, skipped)
+        return self._create(client, to_create)
 
-    def _create(self, client: Api121Client, registrations: list[Registration]) -> list[str]:
+    def _create(self, client: Client121, registrations: list[Registration]) -> list[str]:
         if not registrations:
             return []
         payload = [registration.to_dict() for registration in registrations]
         try:
             response = client.create_registrations(self._batch.program_id, payload)
         except requests.RequestException as exc:
-            return [f"{self.entity_id}: creating registrations failed: {exc}"]
+            return [f"{self.run_target_id}: creating registrations failed: {exc}"]
 
         if response.status_code not in range(200, 300):
             return [
-                f"{self.entity_id}: 121 returned {response.status_code} on create: "
+                f"{self.run_target_id}: 121 returned {response.status_code} on create: "
                 f"{response.text[:500]}"
             ]
-        logger.info("%s: created %d registrations", self.entity_id, len(registrations))
+        logger.info("%s: created %d registrations", self.run_target_id, len(registrations))
         return []
-
-    def _update(self, client: Api121Client, registrations: list[Registration]) -> list[str]:
-        errors = []
-        for registration in registrations:
-            try:
-                response = client.update_registration(
-                    self._batch.program_id,
-                    registration.reference_id,
-                    registration.attributes,
-                    UPDATE_REASON,
-                )
-            except requests.RequestException as exc:
-                errors.append(
-                    f"{self.entity_id}: updating {registration.reference_id} failed: {exc}"
-                )
-                continue
-            if response.status_code not in range(200, 300):
-                errors.append(
-                    f"{self.entity_id}: 121 returned {response.status_code} on update of "
-                    f"{registration.reference_id}: {response.text[:500]}"
-                )
-        updated = len(registrations) - len(errors)
-        if updated:
-            logger.info("%s: updated %d registrations", self.entity_id, updated)
-        return errors

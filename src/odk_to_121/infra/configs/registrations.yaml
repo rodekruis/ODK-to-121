@@ -1,85 +1,52 @@
-# ODK form -> 121 program. Field mappings are declared here, not in code.
-pipeline_type: registrations
-
-run_targets:
+# ODK form -> 121 program. Registration attributes are derived from the ODK form
+# schema at run time and created in 121 before any registration is submitted.
+environments:
   debug:
-    entities:
+    run_targets:
       - id: registration-form
         data_source: dummy_submissions
         odk:
           project_id: 1
           form_id: registration_form
-        program:
+        121:
           program_id: 1
-          submission_mode: upsert
           preferred_language: en
         reference_id_field: __id
-        skip_review_states: [rejected, hasIssues]
-        field_mappings:
-          - odk_field: person/full_name
-            attribute: fullName
-            required: true
-          - odk_field: person/phone_number
-            attribute: phoneNumber
-            required: true
-          - odk_field: household/size
-            attribute: householdSize
-            default: 1
+        # ODK question names become 121 attribute names, so name FSP-required
+        # questions exactly as 121 expects them.
+        required_attributes: [fullName, phoneNumber]
         output:
           mode: local
           path: output/
 
   test:
-    entities:
+    run_targets:
       - id: registration-form
         data_source: odk_submissions
         odk:
-          project_id: 1
-          form_id: registration_form
-          submission_filter: __system/reviewState ne 'rejected'
-        program:
-          program_id: 1
-          submission_mode: upsert
-          preferred_language: en
+          project_id: 46
+          form_id: MPCA Project Test
+        121:
+          program_id: 8
+          preferred_language: ar
         reference_id_field: __id
-        skip_review_states: [rejected, hasIssues]
-        field_mappings:
-          - odk_field: person/full_name
-            attribute: fullName
-            required: true
-          - odk_field: person/phone_number
-            attribute: phoneNumber
-            required: true
-          - odk_field: household/size
-            attribute: householdSize
-            default: 1
+        required_attributes: [fullName, phoneNumber]
         output:
-          mode: local
+          mode: 121
           path: output/
 
   prod:
-    entities:
+    run_targets:
       - id: registration-form
         data_source: odk_submissions
         odk:
           project_id: 1
           form_id: registration_form
-        program:
+        121:
           program_id: 1
-          submission_mode: upsert
           preferred_language: en
         reference_id_field: __id
-        skip_review_states: [rejected, hasIssues]
-        field_mappings:
-          - odk_field: person/full_name
-            attribute: fullName
-            required: true
-          - odk_field: person/phone_number
-            attribute: phoneNumber
-            required: true
-          - odk_field: household/size
-            attribute: householdSize
-            default: 1
+        required_attributes: [fullName, phoneNumber]
         output:
-          mode: api
+          mode: 121
           path: output/

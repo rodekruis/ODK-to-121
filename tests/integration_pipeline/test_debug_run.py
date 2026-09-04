@@ -5,30 +5,22 @@ from pathlib import Path
 
 import pytest
 
-from odk_to_121.infra.data_types.config_types import RunTarget
+from odk_to_121.infra.data_types.config_types import Environment
 from odk_to_121.infra.orchestrator import run_pipeline
 
 CONFIG = """
-pipeline_type: registrations
-run_targets:
+environments:
   debug:
-    entities:
+    run_targets:
       - id: form-a
         data_source: dummy_submissions
         odk:
           project_id: 1
           form_id: registration_form
-        program:
+        121:
           program_id: 1
           preferred_language: en
-        skip_review_states: [rejected]
-        field_mappings:
-          - odk_field: person/full_name
-            attribute: fullName
-            required: true
-          - odk_field: person/phone_number
-            attribute: phoneNumber
-            required: true
+        required_attributes: [fullName, phoneNumber]
         output:
           mode: local
           path: {output_path}
@@ -43,7 +35,7 @@ def test_debug_run_writes_registrations_to_disk(tmp_path: Path) -> None:
         CONFIG.format(output_path=json.dumps(str(output_path))), encoding="utf-8"
     )
 
-    errors = run_pipeline(config_path, RunTarget.DEBUG)
+    errors = run_pipeline(config_path, Environment.DEBUG)
 
     assert errors == []
     written = list(output_path.glob("form-a/*/registrations.json"))
@@ -51,7 +43,7 @@ def test_debug_run_writes_registrations_to_disk(tmp_path: Path) -> None:
 
     payload = json.loads(written[0].read_text(encoding="utf-8"))
     assert payload["programId"] == 1
-    assert len(payload["registrations"]) == 2
+    assert len(payload["registrations"]) == 3
     assert payload["registrations"][0]["referenceId"].startswith("uuid:")
     assert payload["registrations"][0]["preferredLanguage"] == "en"
 
@@ -64,7 +56,7 @@ def test_dry_run_writes_nothing(tmp_path: Path) -> None:
         CONFIG.format(output_path=json.dumps(str(output_path))), encoding="utf-8"
     )
 
-    errors = run_pipeline(config_path, RunTarget.DEBUG, dry_run=True)
+    errors = run_pipeline(config_path, Environment.DEBUG, dry_run=True)
 
     assert errors == []
     assert not output_path.exists()

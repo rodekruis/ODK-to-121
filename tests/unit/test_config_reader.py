@@ -5,26 +5,22 @@ from pathlib import Path
 import pytest
 
 from odk_to_121.infra.config_reader import ConfigError, ConfigReader
-from odk_to_121.infra.data_types.config_types import DataSource, OutputMode, RunTarget
+from odk_to_121.infra.data_types.config_types import DataSource, Environment, OutputMode
 
 REPO_CONFIG = Path("src/odk_to_121/infra/configs/registrations.yaml")
 
 VALID_CONFIG = """
-pipeline_type: registrations
-run_targets:
+environments:
   debug:
-    entities:
+    run_targets:
       - id: form-a
         data_source: dummy_submissions
         odk:
           project_id: 1
           form_id: form_a
-        program:
+        121:
           program_id: 2
-        field_mappings:
-          - odk_field: person/full_name
-            attribute: fullName
-            required: true
+        required_attributes: [fullName]
         output:
           mode: local
           path: output/
@@ -42,24 +38,23 @@ def test_loads_valid_config(tmp_path: Path) -> None:
 
     assert reader.load(_write(tmp_path, VALID_CONFIG))
 
-    entity = reader.get_run_config(RunTarget.DEBUG).entities["form-a"]
-    assert entity.data_source is DataSource.DUMMY_SUBMISSIONS
-    assert entity.output_mode is OutputMode.LOCAL
-    assert entity.program.program_id == 2
-    assert entity.field_mappings[0].required is True
+    run_target = reader.get_run_config(Environment.DEBUG).run_targets["form-a"]
+    assert run_target.data_source is DataSource.DUMMY_SUBMISSIONS
+    assert run_target.output_mode is OutputMode.LOCAL
+    assert run_target.program.program_id == 2
+    assert run_target.required_attributes == ("fullName",)
 
 
 def test_repo_config_is_valid() -> None:
     reader = ConfigReader()
 
     assert reader.load(REPO_CONFIG)
-    assert set(reader.run_configs) == set(RunTarget)
+    assert set(reader.run_configs) == set(Environment)
 
 
 @pytest.mark.parametrize(
     "replacement",
     [
-        ("pipeline_type: registrations", "pipeline_type: unknown"),
         ("data_source: dummy_submissions", "data_source: carrier_pigeon"),
         ("mode: local", "mode: telegram"),
         ("program_id: 2", "program_id: 0"),
@@ -72,18 +67,9 @@ def test_rejects_invalid_config(tmp_path: Path, replacement: tuple[str, str]) ->
     assert ConfigReader().load(_write(tmp_path, content)) is False
 
 
-def test_rejects_duplicate_attribute_mapping(tmp_path: Path) -> None:
+def test_rejects_duplicate_required_attribute(tmp_path: Path) -> None:
     content = VALID_CONFIG.replace(
-        """          - odk_field: person/full_name
-            attribute: fullName
-            required: true
-""",
-        """          - odk_field: person/full_name
-            attribute: fullName
-            required: true
-          - odk_field: person/other_name
-            attribute: fullName
-""",
+        "required_attributes: [fullName]", "required_attributes: [fullName, fullName]"
     )
 
     assert ConfigReader().load(_write(tmp_path, content)) is False
@@ -94,4 +80,4 @@ def test_get_run_config_raises_for_undefined_target(tmp_path: Path) -> None:
     reader.load(_write(tmp_path, VALID_CONFIG))
 
     with pytest.raises(ConfigError):
-        reader.get_run_config(RunTarget.PROD)
+        reader.get_run_config(Environment.PROD)

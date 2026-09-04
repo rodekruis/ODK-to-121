@@ -11,4 +11,4 @@ COPY src/ src/
 RUN uv sync --frozen --no-dev
 
 ENTRYPOINT ["uv", "run", "run-pipeline"]
-CMD ["--config", "src/odk_to_121/infra/configs/registrations.yaml", "--run-target", "prod"]
+CMD ["--config", "src/odk_to_121/infra/configs/registrations.yaml", "--environment", "prod"]

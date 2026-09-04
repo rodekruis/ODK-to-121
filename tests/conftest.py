@@ -23,9 +23,9 @@ def submission_set() -> OdkSubmissionSet:
 @pytest.fixture
 def field_mappings() -> tuple[FieldMapping, ...]:
     return (
-        FieldMapping(odk_field="person/full_name", attribute="fullName", required=True),
-        FieldMapping(odk_field="person/phone_number", attribute="phoneNumber", required=True),
-        FieldMapping(odk_field="household/size", attribute="householdSize", default=1),
+        FieldMapping(odk_field="person/fullName", attribute="fullName", required=True),
+        FieldMapping(odk_field="person/phoneNumber", attribute="phoneNumber", required=True),
+        FieldMapping(odk_field="household/householdSize", attribute="householdSize"),
     )
 
 
@@ -36,5 +36,4 @@ def mapping(field_mappings: tuple[FieldMapping, ...]) -> RegistrationMapping:
         reference_id_field="__id",
         fields=field_mappings,
         preferred_language="en",
-        skip_review_states=("rejected",),
     )

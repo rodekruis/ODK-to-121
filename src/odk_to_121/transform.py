@@ -18,22 +18,17 @@ logger = logging.getLogger(__name__)
 def build_registrations(
     data_provider: DataProvider,
     data_submitter: DataSubmitter,
-    entity_id: str,
+    run_target_id: str,
     mapping: RegistrationMapping,
 ) -> None:
     """Map every eligible submission onto a registration, keyed by a stable reference id."""
     submission_set = data_provider.get_submissions()
     if not submission_set.submissions:
-        logger.warning("%s: no submissions to transform", entity_id)
+        logger.warning("%s: no submissions to transform", run_target_id)
         return
 
-    skipped_review = 0
     skipped_reference = 0
     for submission in submission_set.submissions:
-        if submission.review_state in mapping.skip_review_states:
-            skipped_review += 1
-            continue
-
         reference_id = submission.get(mapping.reference_id_field)
         if not isinstance(reference_id, str) or not reference_id:
             skipped_reference += 1
@@ -46,19 +41,15 @@ def build_registrations(
         )
 
     logger.info(
-        "%s: built %d registrations (%d skipped on review state, %d on missing reference id)",
-        entity_id,
+        "%s: built %d registrations (%d skipped on missing reference id)",
+        run_target_id,
         len(data_submitter.registrations),
-        skipped_review,
         skipped_reference,
     )
 
 
 def _map_attributes(submission: OdkSubmission, mapping: RegistrationMapping) -> dict[str, Scalar]:
-    attributes: dict[str, Scalar] = {}
-    for field_mapping in mapping.fields:
-        value = submission.get(field_mapping.odk_field)
-        attributes[field_mapping.attribute] = (
-            field_mapping.default if value in (None, "") else value
-        )
-    return attributes
+    return {
+        field_mapping.attribute: submission.get(field_mapping.odk_field)
+        for field_mapping in mapping.fields
+    }

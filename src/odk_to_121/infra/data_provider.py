@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from odk_to_121.infra.data_types.config_types import DataSource, EntityRunConfig
+from odk_to_121.infra.data_types.config_types import DataSource, RunTargetConfig
 from odk_to_121.infra.data_types.domain_types import OdkSubmissionSet
+from odk_to_121.infra.utils.client_odk import ClientOdk
 from odk_to_121.infra.utils.data_fetchers import load_submissions
-from odk_to_121.infra.utils.odk_client import OdkClient
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +24,24 @@ class LoadedDataSource:
 class DataProvider:
     """Loads configured sources once, then serves them with runtime type checking."""
 
-    def __init__(self, odk_client: OdkClient | None = None):
-        self.odk_client = odk_client
+    def __init__(self, client_odk: ClientOdk | None = None):
+        self.client_odk = client_odk
         self.loaded_data: dict[DataSource, LoadedDataSource] = {}
 
-    def load_data(self, entity: EntityRunConfig) -> list[str]:
-        """Load every source for an entity. Returns error messages (empty = success)."""
-        container = LoadedDataSource(data_source=entity.data_source)
+    def load_data(self, run_target: RunTargetConfig) -> list[str]:
+        """Load every source for a run target. Returns error messages (empty = success)."""
+        container = LoadedDataSource(data_source=run_target.data_source)
         try:
-            submissions = load_submissions(entity, self.odk_client)
+            submissions = load_submissions(run_target, self.client_odk)
         except Exception as exc:  # noqa: BLE001 - one job: report, never crash the run
             container.error = str(exc)
-            self.loaded_data[entity.data_source] = container
-            return [f"{entity.entity_id}: failed to load {entity.data_source}: {exc}"]
+            self.loaded_data[run_target.data_source] = container
+            return [f"{run_target.run_target_id}: failed to load {run_target.data_source}: {exc}"]
 
         container.data = submissions
         container.metadata = {"count": len(submissions), "form_id": submissions.form_id}
-        self.loaded_data[entity.data_source] = container
-        logger.info("%s: loaded %d submissions", entity.entity_id, len(submissions))
+        self.loaded_data[run_target.data_source] = container
+        logger.info("%s: loaded %d submissions", run_target.run_target_id, len(submissions))
         return []
 
     def get_data[T](self, source: DataSource, expected_type: type[T]) -> T:

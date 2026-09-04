@@ -10,16 +10,13 @@ import yaml
 
 from odk_to_121.infra.data_types.config_types import (
     DataSource,
-    EntityRunConfig,
+    Environment,
     OdkFormConfig,
     OutputMode,
     PipelineRunConfig,
-    PipelineType,
     ProgramConfig,
-    RunTarget,
-    SubmissionMode,
+    RunTargetConfig,
 )
-from odk_to_121.infra.data_types.domain_types import FieldMapping
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +29,7 @@ class ConfigReader:
     """Parses config into frozen dataclasses. Returns False on any validation error."""
 
     def __init__(self) -> None:
-        self.pipeline_type: PipelineType | None = None
-        self.run_configs: dict[RunTarget, PipelineRunConfig] = {}
+        self.run_configs: dict[Environment, PipelineRunConfig] = {}
 
     def load(self, path: Path) -> bool:
         try:
@@ -46,94 +42,91 @@ class ConfigReader:
             logger.error("Config %s: expected a mapping at the top level", path)
             return False
 
-        try:
-            self.pipeline_type = PipelineType(raw.get("pipeline_type"))
-        except ValueError:
-            logger.error(
-                "Config %s: invalid pipeline_type, expected one of %s",
-                path,
-                [t.value for t in PipelineType],
-            )
+        environments = raw.get("environments")
+        if not isinstance(environments, dict) or not environments:
+            logger.error("Config %s: 'environments' must be a non-empty mapping", path)
             return False
 
-        run_targets = raw.get("run_targets")
-        if not isinstance(run_targets, dict) or not run_targets:
-            logger.error("Config %s: 'run_targets' must be a non-empty mapping", path)
-            return False
-
-        for name, body in run_targets.items():
+        for name, body in environments.items():
             try:
-                target = RunTarget(name)
+                environment = Environment(name)
             except ValueError:
                 logger.error(
-                    "Config %s: unknown run target '%s', expected one of %s",
+                    "Config %s: unknown environment '%s', expected one of %s",
                     path,
                     name,
-                    [t.value for t in RunTarget],
+                    [e.value for e in Environment],
                 )
                 return False
 
-            entities = self._parse_entities(body, target)
-            if entities is None:
+            run_targets = self._parse_run_targets(body, environment)
+            if run_targets is None:
                 return False
-            self.run_configs[target] = PipelineRunConfig(
-                run_target=target, pipeline_type=self.pipeline_type, entities=entities
+            self.run_configs[environment] = PipelineRunConfig(
+                environment=environment,
+                run_targets=run_targets,
             )
 
-        logger.info("Loaded config %s with run targets %s", path, sorted(self.run_configs))
+        logger.info("Loaded config %s with environments %s", path, sorted(self.run_configs))
         return True
 
-    def get_run_config(self, target: RunTarget) -> PipelineRunConfig:
-        if target not in self.run_configs:
-            raise ConfigError(f"Run target '{target}' is not defined in the config")
-        return self.run_configs[target]
+    def get_run_config(self, environment: Environment) -> PipelineRunConfig:
+        if environment not in self.run_configs:
+            raise ConfigError(f"Environment '{environment}' is not defined in the config")
+        return self.run_configs[environment]
 
-    def _parse_entities(self, body: Any, target: RunTarget) -> dict[str, EntityRunConfig] | None:
-        if not isinstance(body, dict) or not isinstance(body.get("entities"), list):
-            logger.error("Run target '%s': 'entities' must be a list", target)
+    def _parse_run_targets(
+        self, body: Any, environment: Environment
+    ) -> dict[str, RunTargetConfig] | None:
+        if not isinstance(body, dict) or not isinstance(body.get("run_targets"), list):
+            logger.error("Environment '%s': 'run_targets' must be a list", environment)
             return None
 
-        entities: dict[str, EntityRunConfig] = {}
-        for raw_entity in body["entities"]:
-            entity = self._parse_entity(raw_entity, target)
-            if entity is None:
+        run_targets: dict[str, RunTargetConfig] = {}
+        for raw_target in body["run_targets"]:
+            run_target = self._parse_run_target(raw_target, environment)
+            if run_target is None:
                 return None
-            if entity.entity_id in entities:
-                logger.error("Run target '%s': duplicate entity id '%s'", target, entity.entity_id)
+            if run_target.run_target_id in run_targets:
+                logger.error(
+                    "Environment '%s': duplicate run target id '%s'",
+                    environment,
+                    run_target.run_target_id,
+                )
                 return None
-            entities[entity.entity_id] = entity
+            run_targets[run_target.run_target_id] = run_target
 
-        if not entities:
-            logger.error("Run target '%s': no entities defined", target)
+        if not run_targets:
+            logger.error("Environment '%s': no run targets defined", environment)
             return None
-        return entities
+        return run_targets
 
-    def _parse_entity(self, raw: Any, target: RunTarget) -> EntityRunConfig | None:
+    def _parse_run_target(self, raw: Any, environment: Environment) -> RunTargetConfig | None:
         if not isinstance(raw, dict) or not raw.get("id"):
-            logger.error("Run target '%s': every entity needs an 'id'", target)
+            logger.error("Environment '%s': every run target needs an 'id'", environment)
             return None
-        entity_id = str(raw["id"])
+        run_target_id = str(raw["id"])
 
         try:
             data_source = DataSource(raw.get("data_source"))
             odk = _parse_odk(raw.get("odk"))
-            program = _parse_program(raw.get("program"))
+            # An unquoted `121:` key parses as an int, so accept the quoted form too.
+            program = _parse_program(raw.get(121, raw.get("121")))
             output_mode, output_path = _parse_output(raw.get("output"))
-            field_mappings = _parse_field_mappings(raw.get("field_mappings"))
+            required_attributes = _parse_required_attributes(raw.get("required_attributes"))
         except (ValueError, TypeError, KeyError) as exc:
-            logger.error("Run target '%s', entity '%s': %s", target, entity_id, exc)
+            logger.error("Environment '%s', run target '%s': %s", environment, run_target_id, exc)
             return None
 
-        return EntityRunConfig(
-            entity_id=entity_id,
+        return RunTargetConfig(
+            run_target_id=run_target_id,
             data_source=data_source,
             odk=odk,
             program=program,
-            field_mappings=field_mappings,
             output_mode=output_mode,
             output_path=output_path,
+            required_attributes=required_attributes,
             reference_id_field=str(raw.get("reference_id_field", "__id")),
-            skip_review_states=tuple(raw.get("skip_review_states", ())),
         )
 
 
@@ -143,19 +136,17 @@ def _parse_odk(raw: Any) -> OdkFormConfig:
     return OdkFormConfig(
         project_id=int(raw["project_id"]),
         form_id=str(raw["form_id"]),
-        submission_filter=raw.get("submission_filter"),
     )
 
 
 def _parse_program(raw: Any) -> ProgramConfig:
     if not isinstance(raw, dict):
-        raise TypeError("'program' must be a mapping with program_id")
+        raise TypeError("'121' must be a mapping with program_id")
     program_id = int(raw["program_id"])
     if program_id <= 0:
         raise ValueError(f"program_id must be positive, got {program_id}")
     return ProgramConfig(
         program_id=program_id,
-        submission_mode=SubmissionMode(raw.get("submission_mode", SubmissionMode.UPSERT)),
         preferred_language=raw.get("preferred_language"),
     )
 
@@ -163,32 +154,24 @@ def _parse_program(raw: Any) -> ProgramConfig:
 def _parse_output(raw: Any) -> tuple[OutputMode, str]:
     if not isinstance(raw, dict):
         raise TypeError("'output' must be a mapping with mode")
-    mode = OutputMode(raw["mode"])
+    # An unquoted `mode: 121` parses as an int.
+    mode = OutputMode(str(raw["mode"]))
     path = str(raw.get("path", "output/"))
     if mode is OutputMode.LOCAL and not path:
         raise ValueError("output mode 'local' requires a path")
     return mode, path
 
 
-def _parse_field_mappings(raw: Any) -> tuple[FieldMapping, ...]:
-    if not isinstance(raw, list) or not raw:
-        raise TypeError("'field_mappings' must be a non-empty list")
+def _parse_required_attributes(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise TypeError("'required_attributes' must be a list of 121 attribute names")
 
-    mappings = []
-    attributes: set[str] = set()
+    attributes: list[str] = []
     for item in raw:
-        if not isinstance(item, dict) or "odk_field" not in item or "attribute" not in item:
-            raise TypeError(f"field mapping needs 'odk_field' and 'attribute': {item}")
-        attribute = str(item["attribute"])
-        if attribute in attributes:
-            raise ValueError(f"attribute '{attribute}' is mapped more than once")
-        attributes.add(attribute)
-        mappings.append(
-            FieldMapping(
-                odk_field=str(item["odk_field"]),
-                attribute=attribute,
-                required=bool(item.get("required", False)),
-                default=item.get("default"),
-            )
-        )
-    return tuple(mappings)
+        name = str(item)
+        if name in attributes:
+            raise ValueError(f"required attribute '{name}' is listed more than once")
+        attributes.append(name)
+    return tuple(attributes)
