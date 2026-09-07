@@ -1,12 +1,12 @@
 # ODK-to-121
 
 ETL pipeline that pulls form submissions from **ODK Central** and pushes them to the
-**121 platform** as registrations. Built by [NLRC 510](https://www.510.global/).
+**121 platform** as registrations.
 
 
 ## Design principle
 
-**ODK is a data collection tool. 121 is where data is managed.** All cleaning, validation,
+**ODK is a data collection tool, 121 is where data is managed.** Data cleaning, validation,
 triage and correction happen in the 121 portal, so this pipeline is deliberately simple: it
 loads every new ODK submission into 121 and stops. It **does not filter** ODK submissions and
 **never updates** 121 registrations.
@@ -17,19 +17,19 @@ loads every new ODK submission into 121 and stops. It **does not filter** ODK su
 ODK Central (OData)  ──extract──▶  OdkSubmission  ──transform──▶  Registration  ──load──▶  121
 ```
 
-- **Schema sync** — before anything is extracted, `schema_sync.py` 
-  - reads the ODK form's field schema
-  - derives the 121 registration attributes it implies (one question = one attribute)
+- **Schema sync**: before anything is extracted, `schema_sync.py` 
+  - reads the ODK form's field (i.e. question) schema
+  - derives the 121 registration attributes it implies (one field = one attribute)
   - creates in 121 the registration attributes that the program is missing.
   
   It is additive: fields removed from the ODK form are left alone in 121 so the
   data of the corresponding attribute survives. Existing attributes are never updated,
   a change in ODK type only raises a warning.
-- **Extract** — `utils/client_odk.py` reads the OData `Submissions` feed of one form, following pagination, and parses every row into an `OdkSubmission` (nested groups flattened to `group/field` keys).
-- **Transform** — `transform.py` is pure: it maps ODK fields onto 121 attributes
+- **Extract**: `utils/client_odk.py` reads the OData `Submissions` feed of one form, following pagination, and parses every row into an `OdkSubmission` (nested groups flattened to `group/field` keys).
+- **Transform**: `transform.py` maps ODK fields onto 121 attributes
   using the synced schema and derives a deterministic `referenceId` from the ODK instance id.
   Every submission in the form is mapped.
-- **Load** — `data_submitter.py` runs all integrity checks first and aborts on any error,
+- **Load**: `data_submitter.py` runs all integrity checks first and aborts on any error,
   then produces an output: `local` writes a JSON file, `121` creates the
   registrations the program does not have yet in one batched request. Existing registrations
   are left untouched, because 121 owns the record once it has one.
@@ -41,24 +41,24 @@ Because the `referenceId` is derived from the ODK instance id, reruns only ever 
 The mapping rules mirror the 121 platform's own
 [Kobo integration](https://github.com/global-121/121-platform/tree/main/services/121-service/src/kobo).
 
-- **Names.** The ODK question name becomes the 121 attribute name; the group path is dropped,
+- **Names**: the ODK question name becomes the 121 attribute name; the group path is dropped,
   so `person/fullName` becomes `fullName`. Two groups cannot share a leaf name, that raises an error.
-- **Types.** `int` and `decimal` become `numeric`; everything else storable becomes `text`.
+- **Types**: `int` and `decimal` become `numeric`; everything else storable becomes `text`.
   Dates and geo values are deliberately `text`, because 121's typed attributes reject the
   formats ODK produces.
-- **Not created.** Group nodes, attachments, ODK Collect metadata (`start`, `deviceid`,
+- **Not created**: group nodes, attachments, ODK Collect metadata (`start`, `deviceid`,
   `instanceID`, …) and 121's own built-in columns (`referenceId`, `preferredLanguage`,
   `maxPayments`, …) are skipped. Repeats and names 121 generates itself (`paymentCount`, …)
   abort the run.
-- **Never updated.** An existing attribute is left untouched even if the ODK form changed its
+- **Never updated**: an existing attribute is left untouched even if the ODK form changed its
   type; the mismatch is logged as a warning.
 
 Because ODK's [fields endpoint](https://docs.getodk.org/central-api-form-management/#getting-form-schema-fields)
 returns no question labels or choice lists, every select question
 becomes a plain `text` attribute with value = raw choice name. Reading labels and choices would mean parsing the XForm definition, which is complicated and adds fragility.
 
-Attributes required by 121 (`fullName`, `phoneNumber`, …) are not created nor filled in with 'None': the ODK form needs those questions named exactly as 121 expects them. Requiredness is 121's to decide, so the pipeline only
-**warns** when the program marks an attribute `isRequired` (or lists it in
+Attributes required by 121 (`fullName`, `phoneNumber`, …) are not created nor filled in with `None`: the ODK form needs those questions named exactly as 121 expects them.
+121 ultimately decide, so the pipeline only raises a warning when the program marks an attribute `isRequired` (or lists it in
 `fullnameNamingConvention`) and the ODK form has no field for it. 121 itself rejects what it cannot accept.
 
 ## Quickstart
@@ -85,9 +85,8 @@ Exit codes: `0` success, `1` pipeline errors, `2` config/credential error.
 
 ## Configuration
 
-`src/odk_to_121/configs/registrations.yaml` defines, per environment, a list of **routes** —
-each one ODK form feeding one 121 program. Field mappings are **not** configured; they are
-derived from the form:
+`src/odk_to_121/configs/registrations.yaml` defines, per environment, a list of **routes**, i.e.
+which ODK form feeds which 121 program.
 
 ```yaml
 odk:
@@ -98,16 +97,16 @@ odk:
 fsp_configuration_name: Excel
 ```
 
-Every submission the form holds becomes a registration.
+Field mappings are **not** configured; they are derived from the form.
 
 `fsp_configuration_name` is required, 121 rejects a registration created without one.
 The language a person is messaged in comes from an ODK question named `preferredLanguage`;
 without one, 121 falls back to English for everyone.
 
-Secrets live in `.env` only (see `example.env`).
+Secrets live in `.env` only; copy `example.env`, rename it to `.env` and fill it in.
 
 > [!IMPORTANT]
-> **Do not use admin credentials to run this pipeline.** Create a dedicated user, assign it to the target program with roles `Program Admin` and `Cash Assistance Program Officer`, and use those credentials.
+> **Do not use admin credentials to run this pipeline.** Create a dedicated user in 121, assign it to the target program with roles `Program Admin` and `Cash Assistance Program Officer`, and use those credentials.
 
 ## Logging
 
