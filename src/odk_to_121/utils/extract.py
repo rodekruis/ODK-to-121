@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import logging
 
-from odk_to_121.infra.data_types.config_types import DataSource, RouteConfig
-from odk_to_121.infra.data_types.domain_types import (
+from odk_to_121.data_types.config_types import DataSource, RouteConfig
+from odk_to_121.data_types.domain_types import (
     OdkFormField,
     OdkFormSchema,
     OdkSubmission,
     OdkSubmissionSet,
 )
-from odk_to_121.infra.utils.client_odk import ClientOdk
-from odk_to_121.infra.utils.dummy_data import DUMMY_FORM_FIELDS, DUMMY_SUBMISSION_ROWS
+from odk_to_121.utils.client_odk import ClientOdk
+from odk_to_121.utils.dummy_data import DUMMY_FORM_FIELDS, DUMMY_SUBMISSION_ROWS
 
 logger = logging.getLogger(__name__)
 

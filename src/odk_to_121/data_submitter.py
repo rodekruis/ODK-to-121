@@ -11,11 +11,11 @@ from pathlib import Path
 
 import requests
 
-from odk_to_121.infra.data_types.config_types import OutputMode
-from odk_to_121.infra.data_types.domain_types import FieldMapping, Scalar
-from odk_to_121.infra.data_types.output_types import Registration, RegistrationBatch
-from odk_to_121.infra.utils.client_121 import Client121
-from odk_to_121.infra.utils.integrity_checks import check_batch
+from odk_to_121.data_types.config_types import OutputMode
+from odk_to_121.data_types.domain_types import Scalar
+from odk_to_121.data_types.output_types import Registration, RegistrationBatch
+from odk_to_121.utils.client_121 import Client121
+from odk_to_121.utils.integrity_checks import check_batch
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,14 @@ class DataSubmitter:
         program_id: int,
         source_form_id: str,
         *,
+        fsp_configuration_name: str | None = None,
         issued_at: datetime | None = None,
         client_121: Client121 | None = None,
     ):
+        """Open an empty batch for one route; without a 121 client only local output works."""
         self.route_id = route_id
         self.client_121 = client_121
+        self.fsp_configuration_name = fsp_configuration_name
         self._batch = RegistrationBatch(
             program_id=program_id,
             issued_at=issued_at or datetime.now(UTC),
@@ -42,6 +45,7 @@ class DataSubmitter:
 
     @property
     def registrations(self) -> list[Registration]:
+        """Everything accumulated so far, for logging and assertions."""
         return self._batch.registrations
 
     def create_registration(
@@ -56,20 +60,21 @@ class DataSubmitter:
                 reference_id=reference_id,
                 attributes=attributes,
                 preferred_language=preferred_language,
+                fsp_configuration_name=self.fsp_configuration_name,
             )
         )
 
-    def validate(self, mappings: tuple[FieldMapping, ...]) -> list[str]:
-        return check_batch(self.route_id, self._batch, mappings)
+    def validate(self) -> list[str]:
+        """Run every integrity check without loading anything. Empty list = safe to load."""
+        return check_batch(self.route_id, self._batch)
 
     def load_all(
         self,
         output_mode: OutputMode,
         output_path: str,
-        mappings: tuple[FieldMapping, ...],
     ) -> list[str]:
         """Validate everything, then load. All-or-nothing."""
-        errors = self.validate(mappings)
+        errors = self.validate()
         if errors:
             logger.error("%s: integrity checks failed (%d)", self.route_id, len(errors))
             return errors
@@ -127,6 +132,7 @@ class DataSubmitter:
         return self._create(client, to_create)
 
     def _create(self, client: Client121, registrations: list[Registration]) -> list[str]:
+        """POST the whole batch in one request; 121 accepts or rejects it as a unit."""
         if not registrations:
             return []
         payload = [registration.to_dict() for registration in registrations]
@@ -138,7 +144,28 @@ class DataSubmitter:
         if response.status_code not in range(200, 300):
             return [
                 f"{self.route_id}: 121 returned {response.status_code} on create: "
-                f"{response.text[:500]}"
+                f"{_redacted_body(response)}"
             ]
         logger.info("%s: created %d registrations", self.route_id, len(registrations))
         return []
+
+
+def _redacted_body(response: requests.Response) -> str:
+    """121 echoes the rejected answer back per row, which must never reach a log."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return f"<{len(response.content)} byte non-JSON body>"
+    return json.dumps(_strip_values(payload))[:500]
+
+
+def _strip_values(payload: object) -> object:
+    """Replace every 'value' entry, the only place 121 puts submitted data."""
+    if isinstance(payload, dict):
+        return {
+            key: "[redacted]" if key == "value" else _strip_values(item)
+            for key, item in payload.items()
+        }
+    if isinstance(payload, list):
+        return [_strip_values(item) for item in payload]
+    return payload

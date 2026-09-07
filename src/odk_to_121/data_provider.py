@@ -5,16 +5,18 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from odk_to_121.infra.data_types.config_types import DataSource, RouteConfig
-from odk_to_121.infra.data_types.domain_types import OdkSubmissionSet
-from odk_to_121.infra.utils.client_odk import ClientOdk
-from odk_to_121.infra.utils.extract import extract_submissions
+from odk_to_121.data_types.config_types import DataSource, RouteConfig
+from odk_to_121.data_types.domain_types import OdkSubmissionSet
+from odk_to_121.utils.client_odk import ClientOdk
+from odk_to_121.utils.extract import extract_submissions
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class LoadedDataSource:
+    """One extracted source plus the outcome of extracting it."""
+
     data_source: DataSource
     data: object | None = None
     error: str | None = None
@@ -25,6 +27,7 @@ class DataProvider:
     """Loads configured sources once, then serves them with runtime type checking."""
 
     def __init__(self, client_odk: ClientOdk | None = None):
+        """Without an ODK client only dummy sources can be extracted."""
         self.client_odk = client_odk
         self.loaded_data: dict[DataSource, LoadedDataSource] = {}
 

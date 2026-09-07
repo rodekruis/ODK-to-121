@@ -16,13 +16,17 @@ from dataclasses import dataclass
 
 import requests
 
-from odk_to_121.infra.data_types.config_types import RouteConfig
-from odk_to_121.infra.data_types.domain_types import FieldMapping, OdkFormField, OdkFormSchema
-from odk_to_121.infra.data_types.output_types import AttributeType, ProgramAttribute
-from odk_to_121.infra.utils.client_121 import Client121
-from odk_to_121.infra.utils.client_odk import ClientOdk
-from odk_to_121.infra.utils.extract import extract_form_schema
-from odk_to_121.infra.utils.progress import with_progress
+from odk_to_121.data_types.config_types import RouteConfig
+from odk_to_121.data_types.domain_types import FieldMapping, OdkFormField, OdkFormSchema
+from odk_to_121.data_types.output_types import (
+    AttributeType,
+    ExistingAttribute,
+    ProgramAttribute,
+)
+from odk_to_121.utils.client_121 import Client121
+from odk_to_121.utils.client_odk import ClientOdk
+from odk_to_121.utils.extract import extract_form_schema
+from odk_to_121.utils.progress import with_progress
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +131,6 @@ class SchemaPlan:
 def derive_schema_plan(
     route_id: str,
     schema: OdkFormSchema,
-    required_attributes: tuple[str, ...] = (),
 ) -> tuple[SchemaPlan, list[str]]:
     """Map ODK form fields onto 121 attributes. Pure: no I/O."""
     errors: list[str] = []
@@ -172,21 +175,10 @@ def derive_schema_plan(
             continue
         claimed_by[form_field.name] = form_field.path
 
-        mappings.append(
-            FieldMapping(
-                odk_field=form_field.path,
-                attribute=form_field.name,
-                required=form_field.name in required_attributes,
-            )
-        )
+        mappings.append(FieldMapping(odk_field=form_field.path, attribute=form_field.name))
         if form_field.name not in BUILT_IN_ATTRIBUTES:
             attributes.append(ProgramAttribute(name=form_field.name, type=attribute_type))
 
-    errors.extend(
-        f"{route_id}: required attribute '{name}' has no field in ODK form '{schema.form_id}'"
-        for name in required_attributes
-        if name not in claimed_by
-    )
     if not mappings and not errors:
         errors.append(f"{route_id}: ODK form '{schema.form_id}' has no usable fields")
 
@@ -204,7 +196,7 @@ def sync_program_attributes(
     except Exception as exc:  # noqa: BLE001 - report, never crash the run
         return None, [f"{route.route_id}: could not read the ODK form schema: {exc}"]
 
-    plan, errors = derive_schema_plan(route.route_id, schema, route.required_attributes)
+    plan, errors = derive_schema_plan(route.route_id, schema)
     if errors:
         return None, errors
 
@@ -223,6 +215,9 @@ def sync_program_attributes(
         return None, [f"{route.route_id}: could not list 121 registration attributes: {exc}"]
 
     _warn_on_type_drift(route.route_id, plan.attributes, existing)
+    _warn_on_unmet_requirements(
+        route.route_id, plan.mappings, existing, _read_naming_convention(route, client_121)
+    )
 
     missing = [attribute for attribute in plan.attributes if attribute.name not in existing]
     if not missing:
@@ -242,6 +237,7 @@ def sync_program_attributes(
 def _create_attributes(
     route: RouteConfig, client: Client121, attributes: list[ProgramAttribute]
 ) -> list[str]:
+    """Create the missing attributes, collecting failures instead of stopping at the first."""
     # 121 has no batch endpoint, so a wide form means one slow request per attribute.
     logger.info(
         "%s: creating %d registration attributes, one request each",
@@ -271,17 +267,58 @@ def _create_attributes(
 
 
 def _warn_on_type_drift(
-    route_id: str, attributes: tuple[ProgramAttribute, ...], existing: dict[str, str]
+    route_id: str, attributes: tuple[ProgramAttribute, ...], existing: dict[str, ExistingAttribute]
 ) -> None:
     """Existing attributes are never modified, so a changed ODK type only gets logged."""
     for attribute in attributes:
         current = existing.get(attribute.name)
-        if current and current != attribute.type.value:
+        if current and current.type and current.type != attribute.type.value:
             logger.warning(
                 "%s: attribute '%s' is '%s' in 121 but the ODK form now implies '%s'; "
                 "leaving it unchanged",
                 route_id,
                 attribute.name,
-                current,
+                current.type,
                 attribute.type.value,
+            )
+
+
+def _read_naming_convention(route: RouteConfig, client: Client121) -> tuple[str, ...]:
+    """Only feeds a warning, so failing to read it must not stop the run."""
+    try:
+        return client.get_program(route.program.program_id).fullname_naming_convention
+    except (requests.RequestException, ValueError) as exc:
+        logger.warning("%s: could not read 121 program: %s", route.route_id, exc)
+        return ()
+
+
+def _warn_on_unmet_requirements(
+    route_id: str,
+    mappings: tuple[FieldMapping, ...],
+    existing: dict[str, ExistingAttribute],
+    naming_convention: tuple[str, ...],
+) -> None:
+    """121 owns requiredness (e.g. phoneNumber under Twilio); it rejects what we cannot fill."""
+    supplied = {mapping.attribute for mapping in mappings}
+    unmet = sorted(
+        name
+        for name, attribute in existing.items()
+        if attribute.is_required and name not in supplied
+    )
+    for name in unmet:
+        logger.warning(
+            "%s: 121 requires attribute '%s' but the ODK form has no field for it; "
+            "121 will reject these registrations",
+            route_id,
+            name,
+        )
+
+    # 121 accepts a nameless registration, so nothing but this warning flags it.
+    for name in naming_convention:
+        if name not in supplied:
+            logger.warning(
+                "%s: 121 builds the registration name from attribute '%s' but the ODK form "
+                "has no field for it; these registrations will show an incomplete name",
+                route_id,
+                name,
             )

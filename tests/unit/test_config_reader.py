@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from odk_to_121.infra.config_reader import ConfigError, ConfigReader
-from odk_to_121.infra.data_types.config_types import DataSource, Environment, OutputMode
+from odk_to_121.config_reader import ConfigError, ConfigReader
+from odk_to_121.data_types.config_types import DataSource, Environment, OutputMode
 
-REPO_CONFIG = Path("src/odk_to_121/infra/configs/registrations.yaml")
+REPO_CONFIG = Path("src/odk_to_121/configs/registrations.yaml")
 
 VALID_CONFIG = """
 environments:
@@ -20,7 +20,7 @@ environments:
           form_id: form_a
         121:
           program_id: 2
-        required_attributes: [fullName]
+        fsp_configuration_name: Excel
         output:
           mode: local
           path: output/
@@ -28,6 +28,7 @@ environments:
 
 
 def _write(tmp_path: Path, content: str) -> Path:
+    """Write a config to a temp file and return its path."""
     path = tmp_path / "config.yaml"
     path.write_text(content, encoding="utf-8")
     return path
@@ -42,7 +43,7 @@ def test_loads_valid_config(tmp_path: Path) -> None:
     assert route.data_source is DataSource.DUMMY_SUBMISSIONS
     assert route.output_mode is OutputMode.LOCAL
     assert route.program.program_id == 2
-    assert route.required_attributes == ("fullName",)
+    assert route.fsp_configuration_name == "Excel"
 
 
 def test_repo_config_is_valid() -> None:
@@ -58,19 +59,12 @@ def test_repo_config_is_valid() -> None:
         ("data_source: dummy_submissions", "data_source: carrier_pigeon"),
         ("mode: local", "mode: telegram"),
         ("program_id: 2", "program_id: 0"),
+        ("        fsp_configuration_name: Excel\n", ""),
         ("  debug:", "  staging:"),
     ],
 )
 def test_rejects_invalid_config(tmp_path: Path, replacement: tuple[str, str]) -> None:
     content = VALID_CONFIG.replace(*replacement)
-
-    assert ConfigReader().load(_write(tmp_path, content)) is False
-
-
-def test_rejects_duplicate_required_attribute(tmp_path: Path) -> None:
-    content = VALID_CONFIG.replace(
-        "required_attributes: [fullName]", "required_attributes: [fullName, fullName]"
-    )
 
     assert ConfigReader().load(_write(tmp_path, content)) is False
 

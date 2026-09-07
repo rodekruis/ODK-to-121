@@ -7,31 +7,40 @@ from enum import StrEnum
 
 
 class Environment(StrEnum):
+    """Which set of routes to run: dummy data, the 121 test instance, or production."""
+
     DEBUG = "debug"
     TEST = "test"
     PROD = "prod"
 
 
 class DataSource(StrEnum):
+    """Where a route's submissions come from."""
+
     ODK_SUBMISSIONS = "odk_submissions"
     DUMMY_SUBMISSIONS = "dummy_submissions"
 
 
 class OutputMode(StrEnum):
+    """Where a route's registrations go."""
+
     LOCAL = "local"
     PLATFORM_121 = "121"
 
 
 @dataclass(frozen=True)
 class OdkFormConfig:
+    """The ODK Central form a route extracts from."""
+
     project_id: int
     form_id: str
 
 
 @dataclass(frozen=True)
 class ProgramConfig:
+    """The 121 program a route loads into."""
+
     program_id: int
-    preferred_language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,13 +53,13 @@ class RouteConfig:
     program: ProgramConfig
     output_mode: OutputMode
     output_path: str
-    # Attributes a registration cannot be submitted without. Not derived from ODK's
-    # 'required' bind, which stays true even when skip logic makes a question irrelevant.
-    required_attributes: tuple[str, ...] = ()
-    reference_id_field: str = "__id"
+    # Name of a 121 FSP configuration; 121 rejects a registration created without one.
+    fsp_configuration_name: str
 
 
 @dataclass(frozen=True)
 class PipelineRunConfig:
+    """Every route to run for one environment, keyed by route id."""
+
     environment: Environment
     routes: dict[str, RouteConfig]

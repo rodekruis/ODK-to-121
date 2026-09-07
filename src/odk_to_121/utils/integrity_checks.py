@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from collections import Counter
 
-from odk_to_121.infra.data_types.domain_types import FieldMapping
-from odk_to_121.infra.data_types.output_types import Registration, RegistrationBatch
+from odk_to_121.data_types.output_types import RegistrationBatch
 
 MAX_REFERENCE_ID_LENGTH = 200
 
 
 def check_reference_ids(route_id: str, batch: RegistrationBatch) -> list[str]:
+    """Every registration needs a unique referenceId: it is what makes a re-run idempotent."""
     errors = []
     for registration in batch.registrations:
         if not registration.reference_id:
@@ -36,26 +36,8 @@ def check_reference_ids(route_id: str, batch: RegistrationBatch) -> list[str]:
     return errors
 
 
-def check_required_attributes(
-    route_id: str, batch: RegistrationBatch, mappings: tuple[FieldMapping, ...]
-) -> list[str]:
-    required = [mapping.attribute for mapping in mappings if mapping.required]
-    errors = []
-    for registration in batch.registrations:
-        missing = [
-            attribute
-            for attribute in required
-            if registration.attributes.get(attribute) in (None, "")
-        ]
-        if missing:
-            errors.append(
-                f"{route_id}: registration {registration.reference_id} misses "
-                f"required attributes {sorted(missing)}"
-            )
-    return errors
-
-
 def check_attribute_types(route_id: str, batch: RegistrationBatch) -> list[str]:
+    """121 stores each value in one varchar column; a non-scalar 400s the whole batch."""
     errors = []
     for registration in batch.registrations:
         for attribute, value in registration.attributes.items():
@@ -68,23 +50,16 @@ def check_attribute_types(route_id: str, batch: RegistrationBatch) -> list[str]:
 
 
 def check_program_id(route_id: str, batch: RegistrationBatch) -> list[str]:
+    """Guards against a misconfigured route silently posting into the wrong URL."""
     if batch.program_id <= 0:
         return [f"{route_id}: invalid programId {batch.program_id}"]
     return []
 
 
-def check_batch(
-    route_id: str, batch: RegistrationBatch, mappings: tuple[FieldMapping, ...]
-) -> list[str]:
+def check_batch(route_id: str, batch: RegistrationBatch) -> list[str]:
     """Run every integrity check and collect all errors."""
     return [
         *check_program_id(route_id, batch),
         *check_reference_ids(route_id, batch),
-        *check_required_attributes(route_id, batch, mappings),
         *check_attribute_types(route_id, batch),
     ]
-
-
-def registration_summary(registration: Registration) -> str:
-    """Identify a registration in logs without exposing personal data."""
-    return f"registration {registration.reference_id}"

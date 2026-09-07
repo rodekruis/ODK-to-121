@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import logging
 
-from odk_to_121.infra.data_provider import DataProvider
-from odk_to_121.infra.data_submitter import DataSubmitter
-from odk_to_121.infra.data_types.domain_types import (
+from odk_to_121.data_provider import DataProvider
+from odk_to_121.data_submitter import DataSubmitter
+from odk_to_121.data_types.domain_types import (
     OdkSubmission,
     RegistrationMapping,
     Scalar,
 )
 
 logger = logging.getLogger(__name__)
+
+# 121 generic property, not a registration attribute: an ODK question of this name sets
+# the language per person. Without it 121 silently falls back to English.
+PREFERRED_LANGUAGE_ATTRIBUTE = "preferredLanguage"
 
 
 def transform_submissions(
@@ -27,29 +31,29 @@ def transform_submissions(
         logger.warning("%s: no submissions to transform", route_id)
         return
 
-    skipped_reference = 0
     for submission in submission_set.submissions:
-        reference_id = submission.get(mapping.reference_id_field)
-        if not isinstance(reference_id, str) or not reference_id:
-            skipped_reference += 1
-            continue
-
+        attributes = _map_attributes(submission, mapping)
         data_submitter.create_registration(
-            reference_id=reference_id,
-            attributes=_map_attributes(submission, mapping),
-            preferred_language=mapping.preferred_language,
+            reference_id=submission.instance_id,
+            attributes=attributes,
+            preferred_language=_as_language(attributes.pop(PREFERRED_LANGUAGE_ATTRIBUTE, None)),
         )
 
     logger.info(
-        "%s: transformed %d submissions into registrations (%d skipped on missing reference id)",
+        "%s: transformed %d submissions into registrations",
         route_id,
         len(data_submitter.registrations),
-        skipped_reference,
     )
 
 
 def _map_attributes(submission: OdkSubmission, mapping: RegistrationMapping) -> dict[str, Scalar]:
+    """Map ODK submission fields to 121 registration attributes."""
     return {
         field_mapping.attribute: submission.get(field_mapping.odk_field)
         for field_mapping in mapping.fields
     }
+
+
+def _as_language(value: Scalar) -> str | None:
+    """Return the language if set, otherwise None."""
+    return value.strip() if isinstance(value, str) and value.strip() else None

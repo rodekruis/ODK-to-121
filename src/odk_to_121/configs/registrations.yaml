@@ -10,11 +10,7 @@ environments:
           form_id: registration_form
         121:
           program_id: 1
-          preferred_language: en
-        reference_id_field: __id
-        # ODK question names become 121 attribute names, so name FSP-required
-        # questions exactly as 121 expects them.
-        required_attributes: [fullName, phoneNumber]
+        fsp_configuration_name: Excel
         output:
           mode: local
           path: output/
@@ -28,12 +24,9 @@ environments:
           form_id: MPCA Project Test
         121:
           program_id: 8
-          preferred_language: ar
-        reference_id_field: __id
-        required_attributes: [fullName, phoneNumber]
+        fsp_configuration_name: Excel
         output:
           mode: 121
-          path: output/
 
   prod:
     routes:
@@ -44,9 +37,6 @@ environments:
           form_id: registration_form
         121:
           program_id: 1
-          preferred_language: en
-        reference_id_field: __id
-        required_attributes: [fullName, phoneNumber]
+        fsp_configuration_name: Excel
         output:
           mode: 121
-          path: output/

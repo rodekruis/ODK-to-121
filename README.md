@@ -8,8 +8,8 @@ ETL pipeline that pulls form submissions from **ODK Central** and pushes them to
 
 **ODK is a data collection tool. 121 is where data is managed.** All cleaning, validation,
 triage and correction happen in the 121 portal, so this pipeline is deliberately simple: it
-loads every new ODK submission into 121 and stops. It does not filter submissions and never
-updates a 121 registration.
+loads every new ODK submission into 121 and stops. It **does not filter** ODK submissions and
+**never updates** 121 registrations.
 
 ## How it works
 
@@ -17,33 +17,32 @@ updates a 121 registration.
 ODK Central (OData)  ──extract──▶  OdkSubmission  ──transform──▶  Registration  ──load──▶  121
 ```
 
-- **Schema sync** — before anything is extracted, `infra/schema_sync.py` reads the ODK form's
-  field schema, derives the 121 registration attributes it implies, and creates the ones the
-  program is missing. 121 rejects attributes a program does not know about, so this has to
-  succeed first. It is additive: fields removed from the ODK form are left alone in 121 so the
-  data collected against them survives.
-- **Extract** — `infra/utils/client_odk.py` reads the OData `Submissions` feed of one form,
-  following pagination, and parses every row into an `OdkSubmission` (nested groups flattened
-  to `group/field` keys).
+- **Schema sync** — before anything is extracted, `schema_sync.py` 
+  - reads the ODK form's field schema
+  - derives the 121 registration attributes it implies (one question = one attribute)
+  - creates in 121 the registration attributes that the program is missing.
+  
+  It is additive: fields removed from the ODK form are left alone in 121 so the
+  data of the corresponding attribute survives. Existing attributes are never updated,
+  a change in ODK type only raises a warning.
+- **Extract** — `utils/client_odk.py` reads the OData `Submissions` feed of one form, following pagination, and parses every row into an `OdkSubmission` (nested groups flattened to `group/field` keys).
 - **Transform** — `transform.py` is pure: it maps ODK fields onto 121 attributes
   using the synced schema and derives a deterministic `referenceId` from the ODK instance id.
   Every submission in the form is mapped.
-- **Load** — `infra/data_submitter.py` runs all integrity checks first and aborts on any error,
-  then dispatches by output mode: `local` writes an atomic JSON file, `121` creates the
+- **Load** — `data_submitter.py` runs all integrity checks first and aborts on any error,
+  then produces an output: `local` writes a JSON file, `121` creates the
   registrations the program does not have yet in one batched request. Existing registrations
   are left untouched, because 121 owns the record once it has one.
 
-Because the `referenceId` is derived from the ODK instance id, reruns only ever add what is
-missing.
+Because the `referenceId` is derived from the ODK instance id, reruns only ever add what is missing.
 
 ## Schema sync
 
-The mapping rules mirror the 121 platform's own Kobo integration, so an ODK-fed program looks
-like a Kobo-fed one.
+The mapping rules mirror the 121 platform's own
+[Kobo integration](https://github.com/global-121/121-platform/tree/main/services/121-service/src/kobo).
 
 - **Names.** The ODK question name becomes the 121 attribute name; the group path is dropped,
-  so `person/fullName` becomes `fullName`. Two groups cannot share a leaf name — that is a
-  hard error rather than a silent overwrite.
+  so `person/fullName` becomes `fullName`. Two groups cannot share a leaf name, that raises an error.
 - **Types.** `int` and `decimal` become `numeric`; everything else storable becomes `text`.
   Dates and geo values are deliberately `text`, because 121's typed attributes reject the
   formats ODK produces.
@@ -54,19 +53,20 @@ like a Kobo-fed one.
 - **Never updated.** An existing attribute is left untouched even if the ODK form changed its
   type; the mismatch is logged as a warning.
 
-Because ODK's fields endpoint carries no question labels or choice lists, every select question
-becomes a plain `text` attribute holding the raw choice code, and the attribute label falls back
-to the field name. Reading labels and choices would mean parsing the XForm definition.
+Because ODK's [fields endpoint](https://docs.getodk.org/central-api-form-management/#getting-form-schema-fields)
+returns no question labels or choice lists, every select question
+becomes a plain `text` attribute with value = raw choice name. Reading labels and choices would mean parsing the XForm definition, which is complicated and adds fragility.
 
-FSP-required attributes (`fullName`, `phoneNumber`, …) are not created for you — name the ODK
-questions exactly as 121 expects them.
+Attributes required by 121 (`fullName`, `phoneNumber`, …) are not created nor filled in with 'None': the ODK form needs those questions named exactly as 121 expects them. Requiredness is 121's to decide, so the pipeline only
+**warns** when the program marks an attribute `isRequired` (or lists it in
+`fullnameNamingConvention`) and the ODK form has no field for it. 121 itself rejects what it cannot accept.
 
 ## Quickstart
 
 ```bash
 uv sync
 cp example.env .env          # fill in ODK and 121 credentials
-uv run run-pipeline --config src/odk_to_121/infra/configs/registrations.yaml --environment debug
+uv run run-pipeline --environment debug
 ```
 
 The `debug` target uses dummy submissions and writes to `output/`, so it needs no credentials.
@@ -75,8 +75,8 @@ The `debug` target uses dummy submissions and writes to `output/`, so it needs n
 
 | Option | Purpose |
 |--------|---------|
-| `--config` | Path to the YAML config |
 | `--environment` | `debug`, `test` or `prod` |
+| `--config` | Path to the YAML config (optional) |
 | `--issued-at` | Override the run timestamp (backfills) |
 | `--dry-run` | Extract, transform and validate, but load nothing |
 | `--verbose` | Log at DEBUG level |
@@ -85,7 +85,7 @@ Exit codes: `0` success, `1` pipeline errors, `2` config/credential error.
 
 ## Configuration
 
-`src/odk_to_121/infra/configs/registrations.yaml` defines, per environment, a list of **routes** —
+`src/odk_to_121/configs/registrations.yaml` defines, per environment, a list of **routes** —
 each one ODK form feeding one 121 program. Field mappings are **not** configured; they are
 derived from the form:
 
@@ -95,16 +95,39 @@ odk:
   form_id: registration_form
 121:
   program_id: 1
-  preferred_language: en
-required_attributes: [fullName, phoneNumber]   # enforced by the integrity checks
+fsp_configuration_name: Excel
 ```
 
 Every submission the form holds becomes a registration.
 
-`required_attributes` is deliberately manual: ODK's `required` bind stays true even when skip
-logic makes a question irrelevant, so it cannot be mirrored.
+`fsp_configuration_name` is required, 121 rejects a registration created without one.
+The language a person is messaged in comes from an ODK question named `preferredLanguage`;
+without one, 121 falls back to English for everyone.
 
-Secrets live in `.env` only (see `example.env`). Precedence: CLI flags > env vars > YAML > defaults.
+Secrets live in `.env` only (see `example.env`).
+
+> [!IMPORTANT]
+> **Do not use admin credentials to run this pipeline.** Create a dedicated user, assign it to the target program with roles `Program Admin` and `Cash Assistance Program Officer`, and use those credentials.
+
+## Logging
+
+Every run gets a `run_id`, stamped on each log line so one run can be followed end to end.
+
+Set `APPLICATIONINSIGHTS_CONNECTION_STRING` and logs are also sent to the Log Analytics
+workspace behind that Application Insights resource, via `azure-monitor-opentelemetry`. Leave it
+empty (the default) and the pipeline logs to the console only, so local and CI runs send nothing.
+
+Find a run in Log Analytics with:
+
+```kusto
+union AppTraces, AppExceptions
+| where Properties.run_id == "<run_id>"
+| order by TimeGenerated asc
+```
+
+Log messages never contain field values, so no personally identifiable information is stored (see the
+redaction in `data_submitter.py`, which strips the answers 121 returns in its validation
+errors).
 
 ## Tests
 
@@ -113,16 +136,6 @@ uv run pytest tests/unit/          # pure logic, no I/O
 uv run pytest -m integration       # infra + end-to-end with mocked APIs
 uv run ruff check . && uv run ty check
 ```
-
-## Open items
-
-- The ODK form id and project id in the config are placeholders — replace them with the real form.
-- `dummy_data.py` provides the form schema and submissions for the `debug` target; swap it for a
-  real ODK test form when available.
-- The 121 read endpoint for existing attributes (`GET /api/programs/{id}/attributes`) should be
-  verified against the target instance.
-- Select questions land as raw choice codes. If caseworkers need labels, schema sync has to read
-  the XForm definition instead of the fields endpoint.
 
 ## AI Disclaimer
 

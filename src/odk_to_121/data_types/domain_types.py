@@ -43,8 +43,6 @@ class OdkSubmission:
 
     def get(self, path: str) -> Scalar:
         """Read an answer by its flattened `group/field` path."""
-        if path == ODK_INSTANCE_ID_KEY:
-            return self.instance_id
         return self.values.get(path)
 
 
@@ -57,6 +55,7 @@ class OdkSubmissionSet:
     submissions: tuple[OdkSubmission, ...] = ()
 
     def __len__(self) -> int:
+        """Number of submissions, so callers can treat the set as a collection."""
         return len(self.submissions)
 
 
@@ -70,6 +69,7 @@ class OdkFormField:
 
     @classmethod
     def from_api(cls, raw: dict[str, Any]) -> OdkFormField:
+        """Parse one entry of ODK Central's form `/fields` response."""
         # Paths arrive as '/group/field'; submissions flatten to 'group/field'.
         path = str(raw.get("path") or "").lstrip("/")
         name = str(raw.get("name") or "")
@@ -93,17 +93,14 @@ class FieldMapping:
 
     odk_field: str
     attribute: str
-    required: bool = False
 
 
 @dataclass(frozen=True)
 class RegistrationMapping:
-    """Everything the transform needs, built by infra from config."""
+    """Everything the transform needs, built from config and the synced schema."""
 
     program_id: int
-    reference_id_field: str
     fields: tuple[FieldMapping, ...]
-    preferred_language: str | None = None
 
 
 def _flatten(values: dict[str, Any], prefix: str = "") -> dict[str, Scalar]:
@@ -121,6 +118,7 @@ def _flatten(values: dict[str, Any], prefix: str = "") -> dict[str, Scalar]:
 
 
 def _parse_timestamp(raw: object) -> datetime | None:
+    """Read an ODK ISO timestamp; anything unparseable is treated as absent."""
     if not isinstance(raw, str) or not raw:
         return None
     try:

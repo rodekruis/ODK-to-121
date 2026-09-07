@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 import requests
 
-from odk_to_121.infra.utils.http import DEFAULT_TIMEOUT, create_resilient_session
+from odk_to_121.utils.http import DEFAULT_TIMEOUT, create_resilient_session
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ class ClientOdk:
     def __init__(
         self, base_url: str, username: str, password: str, *, timeout: int = DEFAULT_TIMEOUT
     ):
+        """Prepare a retrying session; the token is fetched lazily on first use."""
         self.base_url = base_url.rstrip("/")
         self._username = username
         self._password = password
@@ -35,6 +36,7 @@ class ClientOdk:
 
     @classmethod
     def from_env(cls) -> ClientOdk:
+        """Build a client from the ODK credentials in the environment."""
         base_url = os.environ.get("ODK_BASE_URL")
         username = os.environ.get("ODK_USERNAME")
         password = os.environ.get("ODK_PASSWORD")
@@ -97,6 +99,7 @@ class ClientOdk:
         return rows
 
     def _get_json(self, url: str, params: dict[str, str | int]) -> Any:
+        """Authenticated GET that reports every transport failure as a ClientOdkError."""
         try:
             response = self.session.get(
                 url,

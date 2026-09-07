@@ -44,22 +44,22 @@ uv run ty check         # type check
 
 ## Project Structure
 
-Use a `src/` layout. Separate **infra** (extract/load mechanics, maintained by engineers) from **domain**
-(pure transform logic). Folders mirror data flow.
+Use a `src/` layout, flat: one module per pipeline stage. `transform.py` stays the only module that
+is pure and I/O-free; everything beside it owns the extract/load mechanics. Folders mirror data flow.
 
 ```
 src/my_pipeline/
-├── infra/
-│   ├── orchestrator.py      # wires extract → transform → load per route
-│   ├── config_reader.py     # read + validate YAML
-│   ├── data_provider.py     # read-only abstraction over all sources
-│   ├── data_submitter.py    # write/validate/load output (builder pattern)
-│   ├── data_types/          # config_types, domain_types, output_types (dataclasses + StrEnums)
-│   ├── utils/               # client_<system>, extract, integrity_checks
-│   └── configs/*.yaml       # per-domain run config
-├── transform.py             # pure transform fn (one per domain if there are several)
-└── storage/                 # Storage ABC + LocalStorage / AzureBlobStorage (Protocol-based pipelines)
-run_pipeline.py / cli.py     # CLI entry point
+├── cli.py                # CLI entry point
+├── orchestrator.py       # wires extract → transform → load per route
+├── config_reader.py      # read + validate YAML
+├── data_provider.py      # read-only abstraction over all sources
+├── data_submitter.py     # write/validate/load output (builder pattern)
+├── schema_sync.py        # reconcile the source schema with the destination
+├── transform.py          # pure transform fn (one per domain if there are several)
+├── data_types/           # config_types, domain_types, output_types (dataclasses + StrEnums)
+├── utils/                # client_<system>, extract, integrity_checks
+├── configs/*.yaml        # per-domain run config
+└── storage/              # Storage ABC + LocalStorage / AzureBlobStorage (Protocol-based pipelines)
 tests/{unit, integration_infra, integration_pipeline}/
 ```
 
@@ -192,7 +192,7 @@ requires-python = ">=3.12"
 dependencies = ["requests", "pyyaml", "click", "pydantic"]
 
 [project.scripts]
-run-pipeline = "my_pipeline.infra.orchestrator:main"
+run-pipeline = "my_pipeline.orchestrator:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pytest-cov>=6.0", "responses", "ruff>=0.8", "ty"]

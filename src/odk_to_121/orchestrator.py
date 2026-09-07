@@ -7,20 +7,20 @@ from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
-from odk_to_121.infra.config_reader import ConfigError, ConfigReader
-from odk_to_121.infra.data_provider import DataProvider
-from odk_to_121.infra.data_submitter import DataSubmitter
-from odk_to_121.infra.data_types.config_types import (
+from odk_to_121.config_reader import ConfigError, ConfigReader
+from odk_to_121.data_provider import DataProvider
+from odk_to_121.data_submitter import DataSubmitter
+from odk_to_121.data_types.config_types import (
     DataSource,
     Environment,
     OutputMode,
     RouteConfig,
 )
-from odk_to_121.infra.data_types.domain_types import RegistrationMapping
-from odk_to_121.infra.schema_sync import SchemaPlan, sync_program_attributes
-from odk_to_121.infra.utils.client_121 import Client121
-from odk_to_121.infra.utils.client_odk import ClientOdk
+from odk_to_121.data_types.domain_types import RegistrationMapping
+from odk_to_121.schema_sync import SchemaPlan, sync_program_attributes
 from odk_to_121.transform import transform_submissions
+from odk_to_121.utils.client_121 import Client121
+from odk_to_121.utils.client_odk import ClientOdk
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ def _run_route(
     issued_at: datetime | None,
     dry_run: bool,
 ) -> list[str]:
+    """Run one route end to end: sync schema, extract, transform, then load."""
     provider = DataProvider(client_odk=client_odk)
 
     # 121 rejects attributes the program does not know, so the schema is reconciled first.
@@ -76,13 +77,14 @@ def _run_route(
         route_id=route.route_id,
         program_id=route.program.program_id,
         source_form_id=route.odk.form_id,
+        fsp_configuration_name=route.fsp_configuration_name,
         issued_at=issued_at,
         client_121=client_121,
     )
     transform_submissions(provider, submitter, route.route_id, _build_mapping(route, plan))
 
     if dry_run:
-        errors = submitter.validate(plan.mappings)
+        errors = submitter.validate()
         logger.info(
             "%s: dry run, %d registrations validated, nothing sent",
             route.route_id,
@@ -90,28 +92,24 @@ def _run_route(
         )
         return errors
 
-    return submitter.load_all(
-        route.output_mode,
-        route.output_path,
-        plan.mappings,
-    )
+    return submitter.load_all(route.output_mode, route.output_path)
 
 
 def _build_mapping(route: RouteConfig, plan: SchemaPlan) -> RegistrationMapping:
     """Translate config and the synced schema into the domain-facing mapping contract."""
     return RegistrationMapping(
         program_id=route.program.program_id,
-        reference_id_field=route.reference_id_field,
         fields=plan.mappings,
-        preferred_language=route.program.preferred_language,
     )
 
 
 def _build_client_odk(routes: Iterable[RouteConfig]) -> ClientOdk | None:
+    """Only build a client, and so only require credentials, if a route reads live ODK data."""
     needs_odk = any(t.data_source is DataSource.ODK_SUBMISSIONS for t in routes)
     return ClientOdk.from_env() if needs_odk else None
 
 
 def _build_client_121(routes: Iterable[RouteConfig], *, dry_run: bool) -> Client121 | None:
+    """Only build a client, and so only require credentials, if a route really loads to 121."""
     needs_121 = any(t.output_mode is OutputMode.PLATFORM_121 for t in routes)
     return Client121.from_env() if needs_121 and not dry_run else None

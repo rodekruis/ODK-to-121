@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from odk_to_121.infra.data_types.config_types import Environment
-from odk_to_121.infra.orchestrator import run_pipeline
+from odk_to_121.data_types.config_types import Environment
+from odk_to_121.orchestrator import run_pipeline
 
 CONFIG = """
 environments:
@@ -19,8 +19,7 @@ environments:
           form_id: registration_form
         121:
           program_id: 1
-          preferred_language: en
-        required_attributes: [fullName, phoneNumber]
+        fsp_configuration_name: Excel
         output:
           mode: local
           path: {output_path}
@@ -45,7 +44,8 @@ def test_debug_run_writes_registrations_to_disk(tmp_path: Path) -> None:
     assert payload["programId"] == 1
     assert len(payload["registrations"]) == 3
     assert payload["registrations"][0]["referenceId"].startswith("uuid:")
-    assert payload["registrations"][0]["preferredLanguage"] == "en"
+    # The dummy form has no preferredLanguage question, so 121 applies its own default.
+    assert "preferredLanguage" not in payload["registrations"][0]
 
 
 @pytest.mark.integration

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from odk_to_121.infra.data_types.domain_types import OdkFormField, OdkFormSchema
-from odk_to_121.infra.data_types.output_types import AttributeType
-from odk_to_121.infra.schema_sync import derive_schema_plan
+from odk_to_121.data_types.domain_types import OdkFormField, OdkFormSchema
+from odk_to_121.data_types.output_types import AttributeType
+from odk_to_121.schema_sync import derive_schema_plan
 
 
 def _schema(*fields: tuple[str, str, str]) -> OdkFormSchema:
+    """Build a form schema from (path, name, type) triples."""
     return OdkFormSchema(
         project_id=1,
         form_id="registration_form",
@@ -139,30 +140,6 @@ def test_reports_unusable_forms(fields: tuple[tuple[str, str, str], ...], expect
     assert len(errors) == 1
     assert expected in errors[0]
     assert plan.attributes == () or "size" in {a.name for a in plan.attributes}
-
-
-def test_required_attribute_missing_from_the_form_is_an_error() -> None:
-    schema = _schema(("person/fullName", "fullName", "string"))
-
-    _, errors = derive_schema_plan("form-a", schema, required_attributes=("phoneNumber",))
-
-    assert len(errors) == 1
-    assert "required attribute 'phoneNumber'" in errors[0]
-
-
-def test_required_attributes_are_flagged_on_their_mapping() -> None:
-    schema = _schema(
-        ("person/fullName", "fullName", "string"),
-        ("household/householdSize", "householdSize", "int"),
-    )
-
-    plan, errors = derive_schema_plan("form-a", schema, required_attributes=("fullName",))
-
-    assert errors == []
-    assert {m.attribute: m.required for m in plan.mappings} == {
-        "fullName": True,
-        "householdSize": False,
-    }
 
 
 def test_form_without_usable_fields_is_an_error() -> None:

@@ -11,12 +11,12 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
-from odk_to_121.infra.config_reader import ConfigError
-from odk_to_121.infra.data_types.config_types import Environment
-from odk_to_121.infra.orchestrator import run_pipeline
-from odk_to_121.infra.utils.client_121 import Client121Error
-from odk_to_121.infra.utils.client_odk import ClientOdkError
-from odk_to_121.infra.utils.logging_config import configure_logging
+from odk_to_121.config_reader import ConfigError
+from odk_to_121.data_types.config_types import Environment
+from odk_to_121.orchestrator import run_pipeline
+from odk_to_121.utils.client_121 import Client121Error
+from odk_to_121.utils.client_odk import ClientOdkError
+from odk_to_121.utils.logging_config import configure_logging
 
 EXIT_SUCCESS = 0
 EXIT_PIPELINE_ERROR = 1
@@ -27,16 +27,16 @@ logger = logging.getLogger(__name__)
 
 @click.command()
 @click.option(
-    "--config",
-    required=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to the YAML configuration file.",
-)
-@click.option(
     "--environment",
     required=True,
     type=click.Choice([e.value for e in Environment], case_sensitive=False),
     help="Which environment to run: debug, test or prod.",
+)
+@click.option(
+    "--config",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to the YAML configuration file.",
+    default="src/odk_to_121/configs/registrations.yaml",
 )
 @click.option(
     "--issued-at",
@@ -50,8 +50,8 @@ logger = logging.getLogger(__name__)
 )
 @click.option("--verbose", is_flag=True, help="Log at DEBUG level.")
 def cli(
-    config: Path,
     environment: str,
+    config: Path,
     issued_at: datetime | None,
     dry_run: bool,
     verbose: bool,

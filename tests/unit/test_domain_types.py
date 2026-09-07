@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from odk_to_121.infra.data_types.domain_types import OdkSubmission
+from odk_to_121.data_types.domain_types import OdkSubmission
 
 
 def test_from_odata_flattens_groups_and_parses_system_fields() -> None:
@@ -25,12 +25,12 @@ def test_from_odata_flattens_groups_and_parses_system_fields() -> None:
     }
 
 
-def test_get_reads_instance_id_and_nested_paths() -> None:
+def test_get_reads_nested_paths() -> None:
     submission = OdkSubmission.from_odata(
         {"__id": "uuid:2", "person": {"full_name": "Grace"}},
     )
 
-    assert submission.get("__id") == "uuid:2"
+    assert submission.instance_id == "uuid:2"
     assert submission.get("person/full_name") == "Grace"
     assert submission.get("person/missing") is None
 

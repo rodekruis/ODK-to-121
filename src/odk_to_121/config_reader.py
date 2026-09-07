@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from odk_to_121.infra.data_types.config_types import (
+from odk_to_121.data_types.config_types import (
     DataSource,
     Environment,
     OdkFormConfig,
@@ -29,9 +29,11 @@ class ConfigReader:
     """Parses config into frozen dataclasses. Returns False on any validation error."""
 
     def __init__(self) -> None:
+        """Start empty; `load` fills one run config per environment found in the YAML."""
         self.run_configs: dict[Environment, PipelineRunConfig] = {}
 
     def load(self, path: Path) -> bool:
+        """Read and validate the YAML file. Logs the first problem and returns False."""
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError) as exc:
@@ -71,11 +73,13 @@ class ConfigReader:
         return True
 
     def get_run_config(self, environment: Environment) -> PipelineRunConfig:
+        """Return the routes to run for one environment, or raise if it is undefined."""
         if environment not in self.run_configs:
             raise ConfigError(f"Environment '{environment}' is not defined in the config")
         return self.run_configs[environment]
 
     def _parse_routes(self, body: Any, environment: Environment) -> dict[str, RouteConfig] | None:
+        """Parse one environment's routes, keyed by route id, rejecting duplicates."""
         if not isinstance(body, dict) or not isinstance(body.get("routes"), list):
             logger.error("Environment '%s': 'routes' must be a list", environment)
             return None
@@ -100,6 +104,7 @@ class ConfigReader:
         return routes
 
     def _parse_route(self, raw: Any, environment: Environment) -> RouteConfig | None:
+        """Turn one YAML route mapping into a RouteConfig, logging why it was rejected."""
         if not isinstance(raw, dict) or not raw.get("id"):
             logger.error("Environment '%s': every route needs an 'id'", environment)
             return None
@@ -111,7 +116,9 @@ class ConfigReader:
             # An unquoted `121:` key parses as an int, so accept the quoted form too.
             program = _parse_program(raw.get(121, raw.get("121")))
             output_mode, output_path = _parse_output(raw.get("output"))
-            required_attributes = _parse_required_attributes(raw.get("required_attributes"))
+            fsp_configuration_name = _parse_fsp_configuration_name(
+                raw.get("fsp_configuration_name")
+            )
         except (ValueError, TypeError, KeyError) as exc:
             logger.error("Environment '%s', route '%s': %s", environment, route_id, exc)
             return None
@@ -123,12 +130,12 @@ class ConfigReader:
             program=program,
             output_mode=output_mode,
             output_path=output_path,
-            required_attributes=required_attributes,
-            reference_id_field=str(raw.get("reference_id_field", "__id")),
+            fsp_configuration_name=fsp_configuration_name,
         )
 
 
 def _parse_odk(raw: Any) -> OdkFormConfig:
+    """Read the ODK Central project and form a route extracts from."""
     if not isinstance(raw, dict):
         raise TypeError("'odk' must be a mapping with project_id and form_id")
     return OdkFormConfig(
@@ -138,18 +145,17 @@ def _parse_odk(raw: Any) -> OdkFormConfig:
 
 
 def _parse_program(raw: Any) -> ProgramConfig:
+    """Read the 121 program a route loads into."""
     if not isinstance(raw, dict):
         raise TypeError("'121' must be a mapping with program_id")
     program_id = int(raw["program_id"])
     if program_id <= 0:
         raise ValueError(f"program_id must be positive, got {program_id}")
-    return ProgramConfig(
-        program_id=program_id,
-        preferred_language=raw.get("preferred_language"),
-    )
+    return ProgramConfig(program_id=program_id)
 
 
 def _parse_output(raw: Any) -> tuple[OutputMode, str]:
+    """Read where a route's registrations go: local files or the 121 API."""
     if not isinstance(raw, dict):
         raise TypeError("'output' must be a mapping with mode")
     # An unquoted `mode: 121` parses as an int.
@@ -160,16 +166,9 @@ def _parse_output(raw: Any) -> tuple[OutputMode, str]:
     return mode, path
 
 
-def _parse_required_attributes(raw: Any) -> tuple[str, ...]:
-    if raw is None:
-        return ()
-    if not isinstance(raw, list):
-        raise TypeError("'required_attributes' must be a list of 121 attribute names")
-
-    attributes: list[str] = []
-    for item in raw:
-        name = str(item)
-        if name in attributes:
-            raise ValueError(f"required attribute '{name}' is listed more than once")
-        attributes.append(name)
-    return tuple(attributes)
+def _parse_fsp_configuration_name(raw: Any) -> str:
+    """Read the 121 FSP configuration every registration of a route is created under."""
+    name = str(raw or "").strip()
+    if not name:
+        raise ValueError("'fsp_configuration_name' is required")
+    return name

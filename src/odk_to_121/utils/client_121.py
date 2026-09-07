@@ -8,8 +8,9 @@ from typing import Any
 
 import requests
 
-from odk_to_121.infra.data_types.domain_types import Scalar
-from odk_to_121.infra.utils.http import DEFAULT_TIMEOUT, create_resilient_session
+from odk_to_121.data_types.domain_types import Scalar
+from odk_to_121.data_types.output_types import ExistingAttribute, ExistingProgram
+from odk_to_121.utils.http import DEFAULT_TIMEOUT, create_resilient_session
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class Client121:
     def __init__(
         self, base_url: str, username: str, password: str, *, timeout: int = DEFAULT_TIMEOUT
     ):
+        """Prepare a retrying session; login happens lazily on first use."""
         self.base_url = base_url.rstrip("/")
         self._username = username
         self._password = password
@@ -35,6 +37,7 @@ class Client121:
 
     @classmethod
     def from_env(cls) -> Client121:
+        """Build a client from the 121 credentials in the environment."""
         base_url = os.environ.get("URL_121")
         username = os.environ.get("USERNAME_121")
         password = os.environ.get("PASSWORD_121")
@@ -75,17 +78,34 @@ class Client121:
         logger.info("Program %d already holds %d registrations", program_id, len(reference_ids))
         return reference_ids
 
-    def get_registration_attributes(self, program_id: int) -> dict[str, str]:
-        """Return the program's registration attributes as name -> type."""
+    def get_program(self, program_id: int) -> ExistingProgram:
+        """Read the program itself; its registration attributes have their own endpoint."""
         self._ensure_login()
         response = self.session.get(
-            f"{self.base_url}/api/programs/{program_id}/attributes", timeout=self.timeout
+            f"{self.base_url}/api/programs/{program_id}", timeout=self.timeout
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError(f"program {program_id} did not return an object")
+        return ExistingProgram.from_121(payload)
+
+    def get_registration_attributes(self, program_id: int) -> dict[str, ExistingAttribute]:
+        """Return the program's registration attributes, keyed by name."""
+        self._ensure_login()
+        response = self.session.get(
+            f"{self.base_url}/api/programs/{program_id}/attributes",
+            params={"includeProgramRegistrationAttributes": "true"},
+            timeout=self.timeout,
         )
         response.raise_for_status()
         attributes = {
-            str(record["name"]): str(record.get("type") or "")
-            for record in _extract_records(response.json())
-            if record.get("name")
+            attribute.name: attribute
+            for attribute in (
+                ExistingAttribute.from_121(record)
+                for record in _extract_records(response.json())
+                if record.get("name")
+            )
         }
         logger.info("Program %d has %d registration attributes", program_id, len(attributes))
         return attributes
@@ -113,6 +133,7 @@ class Client121:
         )
 
     def _ensure_login(self) -> None:
+        """Authenticate on first use so callers never have to."""
         if not self._logged_in:
             self.login()
 
