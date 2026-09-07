@@ -30,11 +30,9 @@ ODK Central (OData)  ──extract──▶  OdkSubmission  ──transform─�
   using the synced schema and uses the ODK instance id as the `referenceId`.
   Every submission in the form is mapped.
 - **Load**: `data_submitter.py` runs all integrity checks first and aborts on any error,
-  then produces an output: `local` writes a JSON file, `121` creates the
-  registrations the program does not have yet in one batched request. Existing registrations
-  are left untouched, because 121 owns the record once it has one.
-
-Because the `referenceId` is derived from the ODK instance id, reruns only ever add what is missing.
+  then produces an output: output mode `local` writes a JSON file, output mode `121` creates new
+  registrations in one batched request. Only missing registrations are created. Existing registrations
+  are not updated.
 
 ## Schema sync
 
@@ -47,10 +45,12 @@ The mapping rules mirror the 121 platform's own
   Dates and geo values are deliberately `text`, because 121's typed attributes reject the
   formats ODK produces.
 - **Not created**: group nodes, attachments and ODK Collect metadata (`start`, `deviceid`,
-  `instanceID`, …) are skipped entirely. 121's own built-in columns (`referenceId`,
-  `preferredLanguage`, `maxPayments`, …) are still read from the form, but never created as
-  attributes because 121 already owns them. Repeats and names 121 generates itself
-  (`paymentCount`, …) abort the run.
+  `instanceID`, …) are skipped entirely. 121 columns a form may legitimately fill
+  (`preferredLanguage`, `maxPayments`, `paymentAmountMultiplier`) are still read from the form,
+  but never created as attributes because 121 already owns them.
+- **Forbidden**: fields named after something 121 generates (`status`, `paymentCount`,
+  `registrationProgramId`, …) or the pipeline sets itself (`referenceId`,
+  `programFspConfigurationName`) are a configuration mistake, so they abort the route.
 - **Never updated**: an existing attribute is left untouched even if the ODK form changed its
   type; the mismatch is logged as a warning.
 

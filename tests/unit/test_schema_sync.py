@@ -4,7 +4,11 @@ import pytest
 
 from odk_to_121.data_types.domain_types import OdkFormField, OdkFormSchema
 from odk_to_121.data_types.output_types import AttributeType
-from odk_to_121.schema_sync import derive_schema_plan
+from odk_to_121.schema_sync import (
+    BUILT_IN_ATTRIBUTES,
+    FORBIDDEN_ATTRIBUTES,
+    derive_schema_plan,
+)
 
 
 def _schema(*fields: tuple[str, str, str]) -> OdkFormSchema:
@@ -110,24 +114,40 @@ def test_phone_number_is_kept_despite_the_odk_metadata_of_the_same_name() -> Non
     assert [a.name for a in plan.attributes] == ["phoneNumber"]
 
 
-def test_built_in_attributes_are_mapped_but_never_created() -> None:
+@pytest.mark.parametrize("name", sorted(BUILT_IN_ATTRIBUTES))
+def test_built_in_attributes_are_mapped_but_never_created(name: str) -> None:
     schema = _schema(
         ("person/fullName", "fullName", "string"),
-        ("maxPayments", "maxPayments", "int"),
+        (name, name, "string"),
     )
 
     plan, errors = derive_schema_plan("form-a", schema)
 
     assert errors == []
-    assert "maxPayments" in {m.attribute for m in plan.mappings}
-    assert "maxPayments" not in {a.name for a in plan.attributes}
+    assert name in {m.attribute for m in plan.mappings}
+    assert name not in {a.name for a in plan.attributes}
+
+
+@pytest.mark.parametrize("name", sorted(FORBIDDEN_ATTRIBUTES))
+def test_a_field_named_after_a_121_generated_attribute_is_an_error(name: str) -> None:
+    schema = _schema(
+        ("person/fullName", "fullName", "string"),
+        (f"person/{name}", name, "string"),
+    )
+
+    plan, errors = derive_schema_plan("form-a", schema)
+
+    assert len(errors) == 1
+    assert name in errors[0]
+    assert "sets itself" in errors[0]
+    # Only the offending field is dropped; the rest of the form still maps.
+    assert [a.name for a in plan.attributes] == ["fullName"]
 
 
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
         ((("roster", "roster", "repeat"),), "cannot store"),
-        ((("paymentCount", "paymentCount", "int"),), "121 generates itself"),
         (
             (("a/size", "size", "int"), ("b/size", "size", "int")),
             "both map to attribute 'size'",

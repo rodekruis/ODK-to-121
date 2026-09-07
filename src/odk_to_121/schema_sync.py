@@ -52,18 +52,16 @@ SKIPPED_ODK_TYPES = frozenset({"structure", "binary", "unknown"})
 # Repeats arrive as nested arrays, which do not fit 121's flat attribute model.
 UNSUPPORTED_ODK_TYPES = frozenset({"repeat"})
 
-# Built-in 121 registration columns: a form may fill them, but they are never created.
+# Built-in 121 registration columns a form may legitimately fill: mapped, never created.
 BUILT_IN_ATTRIBUTES = frozenset(
     {
-        "referenceId",
         "preferredLanguage",
         "paymentAmountMultiplier",
         "maxPayments",
-        "programFspConfigurationName",
     }
 )
 
-# 121 derives these itself; a form field claiming one of them is a configuration mistake.
+# Names the pipeline or 121 owns; a form field claiming one of them is a configuration mistake.
 FORBIDDEN_ATTRIBUTES = frozenset(
     {
         "id",
@@ -73,6 +71,8 @@ FORBIDDEN_ATTRIBUTES = frozenset(
         "registrationProgramId",
         "paymentCount",
         "paymentCountRemaining",
+        "referenceId",
+        "programFspConfigurationName",
     }
 )
 
@@ -152,7 +152,7 @@ def derive_schema_plan(
         if form_field.name in FORBIDDEN_ATTRIBUTES:
             errors.append(
                 f"{route_id}: field '{form_field.path}' uses '{form_field.name}', "
-                f"which 121 generates itself"
+                f"which the pipeline sets itself"
             )
             continue
 

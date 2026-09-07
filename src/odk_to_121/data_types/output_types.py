@@ -91,12 +91,12 @@ class Registration:
 
     def to_dict(self) -> dict[str, Scalar]:
         """Serialize for 121's create-registrations endpoint."""
-        payload: dict[str, Scalar] = {"referenceId": self.reference_id}
+        payload: dict[str, Scalar] = dict(self.attributes)
+        payload["referenceId"] = self.reference_id
         if self.preferred_language:
             payload["preferredLanguage"] = self.preferred_language
         if self.fsp_configuration_name:
             payload["programFspConfigurationName"] = self.fsp_configuration_name
-        payload.update(self.attributes)
         return payload
 
 
