@@ -45,9 +45,8 @@ The mapping rules mirror the 121 platform's own
   Dates and geo values are deliberately `text`, because 121's typed attributes reject the
   formats ODK produces.
 - **Not created**: group nodes, attachments and ODK Collect metadata (`start`, `deviceid`,
-  `instanceID`, …) are skipped entirely. 121 columns a form may legitimately fill
-  (`preferredLanguage`, `maxPayments`, `paymentAmountMultiplier`) are still read from the form,
-  but never created as attributes because 121 already owns them.
+  `instanceID`, …) are skipped entirely. Fields corresponding to default 121 attributes that a form might legitimately fill
+  (`preferredLanguage`, `maxPayments`, `paymentAmountMultiplier`) are also skipped (already in 121).
 - **Forbidden**: fields named after something 121 generates (`status`, `paymentCount`,
   `registrationProgramId`, …) or the pipeline sets itself (`referenceId`,
   `programFspConfigurationName`) are a configuration mistake, so they abort the route.
