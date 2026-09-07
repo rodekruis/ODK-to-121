@@ -27,7 +27,7 @@ ODK Central (OData)  ──extract──▶  OdkSubmission  ──transform─�
   a change in ODK type only raises a warning.
 - **Extract**: `utils/client_odk.py` reads the OData `Submissions` feed of one form, following pagination, and parses every row into an `OdkSubmission` (nested groups flattened to `group/field` keys).
 - **Transform**: `transform.py` maps ODK fields onto 121 attributes
-  using the synced schema and derives a deterministic `referenceId` from the ODK instance id.
+  using the synced schema and uses the ODK instance id as the `referenceId`.
   Every submission in the form is mapped.
 - **Load**: `data_submitter.py` runs all integrity checks first and aborts on any error,
   then produces an output: `local` writes a JSON file, `121` creates the
@@ -46,10 +46,11 @@ The mapping rules mirror the 121 platform's own
 - **Types**: `int` and `decimal` become `numeric`; everything else storable becomes `text`.
   Dates and geo values are deliberately `text`, because 121's typed attributes reject the
   formats ODK produces.
-- **Not created**: group nodes, attachments, ODK Collect metadata (`start`, `deviceid`,
-  `instanceID`, …) and 121's own built-in columns (`referenceId`, `preferredLanguage`,
-  `maxPayments`, …) are skipped. Repeats and names 121 generates itself (`paymentCount`, …)
-  abort the run.
+- **Not created**: group nodes, attachments and ODK Collect metadata (`start`, `deviceid`,
+  `instanceID`, …) are skipped entirely. 121's own built-in columns (`referenceId`,
+  `preferredLanguage`, `maxPayments`, …) are still read from the form, but never created as
+  attributes because 121 already owns them. Repeats and names 121 generates itself
+  (`paymentCount`, …) abort the run.
 - **Never updated**: an existing attribute is left untouched even if the ODK form changed its
   type; the mismatch is logged as a warning.
 
@@ -58,7 +59,7 @@ returns no question labels or choice lists, every select question
 becomes a plain `text` attribute with value = raw choice name. Reading labels and choices would mean parsing the XForm definition, which is complicated and adds fragility.
 
 Attributes required by 121 (`fullName`, `phoneNumber`, …) are not created nor filled in with `None`: the ODK form needs those questions named exactly as 121 expects them.
-121 ultimately decide, so the pipeline only raises a warning when the program marks an attribute `isRequired` (or lists it in
+121 ultimately decides, so the pipeline only raises a warning when the program marks an attribute `isRequired` (or lists it in
 `fullnameNamingConvention`) and the ODK form has no field for it. 121 itself rejects what it cannot accept.
 
 ## Quickstart
@@ -69,7 +70,7 @@ cp example.env .env          # fill in ODK and 121 credentials
 uv run run-pipeline --environment debug
 ```
 
-The `debug` target uses dummy submissions and writes to `output/`, so it needs no credentials.
+The `debug` environment uses dummy submissions and writes to `output/`, so it needs no credentials.
 
 ### CLI
 

@@ -35,6 +35,5 @@ def field_mappings() -> tuple[FieldMapping, ...]:
 def mapping(field_mappings: tuple[FieldMapping, ...]) -> RegistrationMapping:
     """The full mapping contract a transform is normally handed by the orchestrator."""
     return RegistrationMapping(
-        program_id=1,
         fields=field_mappings,
     )

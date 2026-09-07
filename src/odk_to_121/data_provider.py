@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from odk_to_121.data_types.config_types import DataSource, RouteConfig
 from odk_to_121.data_types.domain_types import OdkSubmissionSet
@@ -19,8 +19,6 @@ class LoadedDataSource:
 
     data_source: DataSource
     data: object | None = None
-    error: str | None = None
-    metadata: dict[str, str | int | float | bool] = field(default_factory=dict)
 
 
 class DataProvider:
@@ -37,12 +35,10 @@ class DataProvider:
         try:
             submissions = extract_submissions(route, self.client_odk)
         except Exception as exc:  # noqa: BLE001 - one job: report, never crash the run
-            container.error = str(exc)
             self.loaded_data[route.data_source] = container
             return [f"{route.route_id}: failed to load {route.data_source}: {exc}"]
 
         container.data = submissions
-        container.metadata = {"count": len(submissions), "form_id": submissions.form_id}
         self.loaded_data[route.data_source] = container
         logger.info("%s: extracted %d submissions", route.route_id, len(submissions))
         return []

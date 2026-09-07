@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from odk_to_121.data_types.domain_types import OdkSubmission
 
 
-def test_from_odata_flattens_groups_and_parses_system_fields() -> None:
+def test_from_odata_flattens_groups_and_drops_system_keys() -> None:
     submission = OdkSubmission.from_odata(
         {
             "__id": "uuid:1",
@@ -16,8 +14,6 @@ def test_from_odata_flattens_groups_and_parses_system_fields() -> None:
     )
 
     assert submission.instance_id == "uuid:1"
-    assert submission.submission_date == datetime(2026, 1, 15, 9, 30, tzinfo=UTC)
-    assert submission.review_state == "approved"
     assert submission.values == {
         "person/full_name": "Ada",
         "person/contact/phone": "3160",

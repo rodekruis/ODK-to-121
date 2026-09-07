@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import Any
 
 from odk_to_121.data_types.config_types import DataSource, RouteConfig
 from odk_to_121.data_types.domain_types import (
@@ -26,20 +28,11 @@ def extract_form_schema(route: RouteConfig, client_odk: ClientOdk | None) -> Odk
             rows = client_odk.get_form_fields(route.odk.project_id, route.odk.form_id)
         case DataSource.DUMMY_SUBMISSIONS:
             rows = DUMMY_FORM_FIELDS
-        case _:
-            raise ValueError(f"{route.route_id}: unknown data source {route.data_source}")
-
-    fields = []
-    for row in rows:
-        try:
-            fields.append(OdkFormField.from_api(row))
-        except ValueError as exc:
-            logger.warning("%s: skipping unparsable form field: %s", route.route_id, exc)
 
     return OdkFormSchema(
         project_id=route.odk.project_id,
         form_id=route.odk.form_id,
-        fields=tuple(fields),
+        fields=_parsed(route.route_id, rows, OdkFormField.from_api, "form field"),
     )
 
 
@@ -49,24 +42,28 @@ def extract_submissions(route: RouteConfig, client_odk: ClientOdk | None) -> Odk
         case DataSource.ODK_SUBMISSIONS:
             if client_odk is None:
                 raise ValueError(f"{route.route_id}: ODK client required for live submissions")
-            rows = client_odk.get_submissions(
-                route.odk.project_id,
-                route.odk.form_id,
-            )
+            rows = client_odk.get_submissions(route.odk.project_id, route.odk.form_id)
         case DataSource.DUMMY_SUBMISSIONS:
             rows = DUMMY_SUBMISSION_ROWS
-        case _:
-            raise ValueError(f"{route.route_id}: unknown data source {route.data_source}")
-
-    submissions = []
-    for row in rows:
-        try:
-            submissions.append(OdkSubmission.from_odata(row))
-        except ValueError as exc:
-            logger.warning("%s: skipping unparsable submission: %s", route.route_id, exc)
 
     return OdkSubmissionSet(
         project_id=route.odk.project_id,
         form_id=route.odk.form_id,
-        submissions=tuple(submissions),
+        submissions=_parsed(route.route_id, rows, OdkSubmission.from_odata, "submission"),
     )
+
+
+def _parsed[T](
+    route_id: str,
+    rows: list[dict[str, Any]],
+    parse: Callable[[dict[str, Any]], T],
+    what: str,
+) -> tuple[T, ...]:
+    """Parse rows one by one, so a single malformed one cannot lose the whole form."""
+    parsed = []
+    for row in rows:
+        try:
+            parsed.append(parse(row))
+        except ValueError as exc:
+            logger.warning("%s: skipping unparsable %s: %s", route_id, what, exc)
+    return tuple(parsed)

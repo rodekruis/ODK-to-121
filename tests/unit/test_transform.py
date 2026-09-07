@@ -56,8 +56,6 @@ def test_unanswered_questions_become_none(
         submissions=(
             submission_set.submissions[0].__class__(
                 instance_id="uuid:9",
-                submission_date=None,
-                review_state=None,
                 values={"person/fullName": "No household"},
             ),
         ),
@@ -74,7 +72,6 @@ def test_a_preferred_language_question_sets_the_language_per_person(
     field_mappings: tuple[FieldMapping, ...],
 ) -> None:
     mapping = RegistrationMapping(
-        program_id=1,
         fields=(
             *field_mappings,
             FieldMapping(odk_field="person/lang", attribute="preferredLanguage"),
@@ -86,14 +83,10 @@ def test_a_preferred_language_question_sets_the_language_per_person(
         submissions=(
             OdkSubmission(
                 instance_id="uuid:1",
-                submission_date=None,
-                review_state=None,
                 values={"person/fullName": "Answered", "person/lang": "ar"},
             ),
             OdkSubmission(
                 instance_id="uuid:2",
-                submission_date=None,
-                review_state=None,
                 values={"person/fullName": "Skipped", "person/lang": ""},
             ),
         ),

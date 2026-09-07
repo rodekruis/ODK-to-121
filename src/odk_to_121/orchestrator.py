@@ -47,7 +47,7 @@ def run_pipeline(
         logger.info("Running route '%s' (environment=%s)", route.route_id, environment)
         try:
             all_errors.extend(_run_route(route, client_odk, client_121, issued_at, dry_run))
-        except Exception as exc:  # noqa: BLE001 - one target must not abort the run
+        except Exception as exc:  # noqa: BLE001 - one route must not abort the run
             logger.exception("%s: unexpected failure", route.route_id)
             all_errors.append(f"{route.route_id}: unexpected failure: {exc}")
 
@@ -64,7 +64,6 @@ def _run_route(
     """Run one route end to end: sync schema, extract, transform, then load."""
     provider = DataProvider(client_odk=client_odk)
 
-    # 121 rejects attributes the program does not know, so the schema is reconciled first.
     plan, errors = sync_program_attributes(route, client_odk, client_121)
     if plan is None:
         return errors
@@ -97,10 +96,7 @@ def _run_route(
 
 def _build_mapping(route: RouteConfig, plan: SchemaPlan) -> RegistrationMapping:
     """Translate config and the synced schema into the domain-facing mapping contract."""
-    return RegistrationMapping(
-        program_id=route.program.program_id,
-        fields=plan.mappings,
-    )
+    return RegistrationMapping(fields=plan.mappings)
 
 
 def _build_client_odk(routes: Iterable[RouteConfig]) -> ClientOdk | None:

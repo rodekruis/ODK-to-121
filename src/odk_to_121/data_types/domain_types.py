@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 # Scalar values accepted as ODK answers and as 121 registration attributes.
 type Scalar = str | int | float | bool | None
 
-ODK_SYSTEM_KEY = "__system"
 ODK_INSTANCE_ID_KEY = "__id"
 
 
@@ -18,8 +16,6 @@ class OdkSubmission:
     """A single ODK submission with its answers flattened to `group/field` keys."""
 
     instance_id: str
-    submission_date: datetime | None
-    review_state: str | None
     values: dict[str, Scalar] = field(default_factory=dict)
 
     @classmethod
@@ -29,17 +25,9 @@ class OdkSubmission:
         if not isinstance(instance_id, str) or not instance_id:
             raise ValueError(f"submission is missing '{ODK_INSTANCE_ID_KEY}': {sorted(raw)}")
 
-        system = raw.get(ODK_SYSTEM_KEY) or {}
-        submitted_raw = system.get("submissionDate")
-        review_state = system.get("reviewState")
-
+        # Everything ODK prefixes with '__' is system metadata, not an answer.
         answers = {k: v for k, v in raw.items() if not k.startswith("__")}
-        return cls(
-            instance_id=instance_id,
-            submission_date=_parse_timestamp(submitted_raw),
-            review_state=review_state if isinstance(review_state, str) else None,
-            values=_flatten(answers),
-        )
+        return cls(instance_id=instance_id, values=_flatten(answers))
 
     def get(self, path: str) -> Scalar:
         """Read an answer by its flattened `group/field` path."""
@@ -99,7 +87,6 @@ class FieldMapping:
 class RegistrationMapping:
     """Everything the transform needs, built from config and the synced schema."""
 
-    program_id: int
     fields: tuple[FieldMapping, ...]
 
 
@@ -115,13 +102,3 @@ def _flatten(values: dict[str, Any], prefix: str = "") -> dict[str, Scalar]:
         else:
             flat[path] = value
     return flat
-
-
-def _parse_timestamp(raw: object) -> datetime | None:
-    """Read an ODK ISO timestamp; anything unparseable is treated as absent."""
-    if not isinstance(raw, str) or not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
