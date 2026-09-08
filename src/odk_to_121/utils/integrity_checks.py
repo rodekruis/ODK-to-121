@@ -1,94 +1,93 @@
 """Output validation, run before anything is sent to 121.
 
-These checks mirror what the 121 API rejects, so failures surface locally with
-context instead of as a 4xx from the platform.
+These checks mirror what the 121 API rejects, so failures surface locally with context
+instead of as a 4xx from the platform. They quarantine one registration at a time: a
+single bad submission must never keep the rest of a run out of 121.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 
-from odk_to_121.data_types.output_types import RegistrationBatch
+from odk_to_121.data_types.output_types import Registration
 
 MAX_REFERENCE_ID_LENGTH = 200
 
 
-def check_reference_ids(route_id: str, batch: RegistrationBatch) -> list[str]:
+def check_registrations(
+    route_id: str,
+    registrations: list[Registration],
+    known_fsp_configuration_names: frozenset[str] = frozenset(),
+) -> tuple[list[Registration], list[str]]:
+    """Split registrations into those safe to load and the errors for the rejected ones."""
+    duplicates = _duplicate_reference_ids(registrations)
+
+    loadable: list[Registration] = []
+    errors: list[str] = []
+    for position, registration in enumerate(registrations, start=1):
+        problems = [
+            *_check_reference_id(registration, duplicates),
+            *_check_attribute_types(registration),
+            *_check_fsp_configuration(registration, known_fsp_configuration_names),
+        ]
+        if problems:
+            subject = _describe(registration, position)
+            errors.extend(f"{route_id}: {subject} {problem}" for problem in problems)
+        else:
+            loadable.append(registration)
+
+    return loadable, errors
+
+
+def _describe(registration: Registration, position: int) -> str:
+    """Name the registration an error is about, falling back to its place in the run."""
+    if registration.reference_id:
+        return f"registration {registration.reference_id}"
+    return f"registration #{position}"
+
+
+def _duplicate_reference_ids(registrations: list[Registration]) -> frozenset[str]:
+    """Reference ids claimed more than once; every claimant is rejected, not just the later ones."""
+    counts = Counter(r.reference_id for r in registrations if r.reference_id)
+    return frozenset(reference_id for reference_id, count in counts.items() if count > 1)
+
+
+def _check_reference_id(registration: Registration, duplicates: frozenset[str]) -> list[str]:
     """Every registration needs a unique referenceId: it is what makes a re-run idempotent."""
-    errors = []
-    for registration in batch.registrations:
-        if not registration.reference_id:
-            errors.append(f"{route_id}: registration without referenceId")
-        elif len(registration.reference_id) > MAX_REFERENCE_ID_LENGTH:
-            errors.append(
-                f"{route_id}: referenceId longer than {MAX_REFERENCE_ID_LENGTH} characters "
-                f"({len(registration.reference_id)})"
-            )
-
-    duplicates = [
-        reference_id
-        for reference_id, count in Counter(r.reference_id for r in batch.registrations).items()
-        if count > 1
-    ]
-    errors.extend(
-        f"{route_id}: duplicate referenceId {reference_id}" for reference_id in duplicates
-    )
-    return errors
-
-
-def check_attribute_types(route_id: str, batch: RegistrationBatch) -> list[str]:
-    """121 stores each value in one varchar column; a non-scalar 400s the whole batch."""
-    errors = []
-    for registration in batch.registrations:
-        for attribute, value in registration.attributes.items():
-            if value is not None and not isinstance(value, str | int | float | bool):
-                errors.append(
-                    f"{route_id}: registration {registration.reference_id} attribute "
-                    f"'{attribute}' has unsupported type {type(value).__name__}"
-                )
-    return errors
-
-
-def check_program_id(route_id: str, batch: RegistrationBatch) -> list[str]:
-    """Guards against a misconfigured route silently posting into the wrong URL."""
-    if batch.program_id <= 0:
-        return [f"{route_id}: invalid programId {batch.program_id}"]
+    if not registration.reference_id:
+        return ["has no referenceId"]
+    if registration.reference_id in duplicates:
+        # Nothing says which claimant is the real one, so none of them is loaded.
+        return ["shares its referenceId with another registration"]
+    if len(registration.reference_id) > MAX_REFERENCE_ID_LENGTH:
+        return [
+            f"has a referenceId longer than {MAX_REFERENCE_ID_LENGTH} characters "
+            f"({len(registration.reference_id)})"
+        ]
     return []
 
 
-def check_fsp_configurations(
-    route_id: str, batch: RegistrationBatch, known_names: frozenset[str]
-) -> list[str]:
+def _check_attribute_types(registration: Registration) -> list[str]:
+    """121 stores each value in one varchar column; a non-scalar is rejected."""
+    return [
+        f"attribute '{attribute}' has unsupported type {type(value).__name__}"
+        for attribute, value in registration.attributes.items()
+        if value is not None and not isinstance(value, str | int | float | bool)
+    ]
+
+
+def _check_fsp_configuration(registration: Registration, known_names: frozenset[str]) -> list[str]:
     """121 rejects a registration naming no FSP configuration, or one it does not have."""
     # Empty means 121 was never contacted (local output, dry run), so there is nothing to check.
     if not known_names:
         return []
 
-    errors = []
-    for registration in batch.registrations:
-        name = registration.fsp_configuration_name
-        if name is None:
-            errors.append(
-                f"{route_id}: registration {registration.reference_id} names no FSP configuration"
-            )
-        elif name not in known_names:
-            errors.append(
-                f"{route_id}: registration {registration.reference_id} names FSP "
-                f"configuration '{name}', which 121 program {batch.program_id} does not "
-                f"have ({', '.join(sorted(known_names))})"
-            )
-    return errors
-
-
-def check_batch(
-    route_id: str,
-    batch: RegistrationBatch,
-    known_fsp_configuration_names: frozenset[str] = frozenset(),
-) -> list[str]:
-    """Run every integrity check and collect all errors."""
-    return [
-        *check_program_id(route_id, batch),
-        *check_reference_ids(route_id, batch),
-        *check_attribute_types(route_id, batch),
-        *check_fsp_configurations(route_id, batch, known_fsp_configuration_names),
-    ]
+    name = registration.fsp_configuration_name
+    if name is None:
+        return ["names no FSP configuration"]
+    if name not in known_names:
+        return [
+            f"names FSP configuration '{name}', which the 121 program does not have "
+            f"({', '.join(sorted(known_names))})"
+        ]
+    return []

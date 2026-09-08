@@ -1,9 +1,10 @@
-"""121 platform client: login, create and update registrations."""
+"""121 platform client: login, read program setup, create registrations."""
 
 from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 import requests
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 1000
 
+# Registrations are created one request each, so pace them to stay a polite neighbour.
+SECONDS_BETWEEN_REGISTRATIONS = 1.0
+
 
 class Client121Error(RuntimeError):
     """Raised when the 121 platform cannot be reached or authenticated against."""
@@ -25,13 +29,21 @@ class Client121:
     """Client for the 121 platform. One instance per run."""
 
     def __init__(
-        self, base_url: str, username: str, password: str, *, timeout: int = DEFAULT_TIMEOUT
+        self,
+        base_url: str,
+        username: str,
+        password: str,
+        *,
+        timeout: int = DEFAULT_TIMEOUT,
+        seconds_between_registrations: float = SECONDS_BETWEEN_REGISTRATIONS,
     ):
         """Prepare a retrying session; login happens lazily on first use."""
         self.base_url = base_url.rstrip("/")
         self._username = username
         self._password = password
         self.timeout = timeout
+        self.seconds_between_registrations = seconds_between_registrations
+        self._last_registration_at: float | None = None
         self.session = create_resilient_session()
         self._logged_in = False
 
@@ -139,16 +151,27 @@ class Client121:
             timeout=self.timeout,
         )
 
-    def create_registrations(
-        self, program_id: int, payload: list[dict[str, Scalar]]
+    def create_registration(
+        self, program_id: int, registration: dict[str, Scalar]
     ) -> requests.Response:
-        """Create registrations in a single batched request."""
+        """Create one registration; 121 validates a whole request at once, so send one per call."""
         self._ensure_login()
+        self._pace_registrations()
         return self.session.post(
             f"{self.base_url}/api/programs/{program_id}/registrations",
-            json=payload,
+            json=[registration],
             timeout=self.timeout,
         )
+
+    def _pace_registrations(self) -> None:
+        """Sleep only for the time the previous request did not already take."""
+        if self._last_registration_at is not None:
+            remaining = self.seconds_between_registrations - (
+                time.monotonic() - self._last_registration_at
+            )
+            if remaining > 0:
+                time.sleep(remaining)
+        self._last_registration_at = time.monotonic()
 
     def _ensure_login(self) -> None:
         """Authenticate on first use so callers never have to."""

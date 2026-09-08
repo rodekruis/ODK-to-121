@@ -1,20 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
-from odk_to_121.data_types.output_types import Registration, RegistrationBatch
-from odk_to_121.utils.integrity_checks import check_batch
-
-
-def _batch(*registrations: Registration, program_id: int = 1) -> RegistrationBatch:
-    """Wrap registrations in a batch so they can be run through the checks."""
-    return RegistrationBatch(
-        program_id=program_id,
-        issued_at=datetime(2026, 1, 15, tzinfo=UTC),
-        source_form_id="registration_form",
-        registrations=list(registrations),
-    )
+from odk_to_121.data_types.output_types import Registration
+from odk_to_121.utils.integrity_checks import check_registrations
 
 
 def _registration(reference_id: str = "uuid:1", **attributes: Any) -> Registration:
@@ -23,48 +12,72 @@ def _registration(reference_id: str = "uuid:1", **attributes: Any) -> Registrati
     return Registration(reference_id=reference_id, attributes={**defaults, **attributes})
 
 
-def test_valid_batch_has_no_errors() -> None:
-    assert check_batch("form-a", _batch(_registration())) == []
+def test_valid_registrations_are_all_loadable() -> None:
+    registrations = [_registration("uuid:1"), _registration("uuid:2")]
+
+    loadable, errors = check_registrations("form-a", registrations)
+
+    assert loadable == registrations
+    assert errors == []
 
 
-def test_detects_duplicate_reference_ids() -> None:
-    errors = check_batch("form-a", _batch(_registration(), _registration()))
+def test_a_bad_registration_does_not_hold_back_the_others() -> None:
+    good = _registration("uuid:1")
+    bad = _registration("uuid:2", fullName={"nested": "dict"})
 
-    assert any("duplicate referenceId" in error for error in errors)
+    loadable, errors = check_registrations("form-a", [good, bad])
+
+    assert loadable == [good]
+    assert len(errors) == 1
+    assert "unsupported type dict" in errors[0]
 
 
-def test_detects_unsupported_attribute_type() -> None:
-    errors = check_batch("form-a", _batch(_registration(fullName={"nested": "dict"})))
+def test_both_claimants_of_a_duplicate_reference_id_are_quarantined() -> None:
+    """Nothing says which copy is the real one, so neither is loaded."""
+    registrations = [_registration("uuid:1"), _registration("uuid:1"), _registration("uuid:2")]
 
-    assert any("unsupported type dict" in error for error in errors)
+    loadable, errors = check_registrations("form-a", registrations)
+
+    assert [r.reference_id for r in loadable] == ["uuid:2"]
+    assert len(errors) == 2
+    assert all("shares its referenceId" in error for error in errors)
 
 
-def test_detects_invalid_program_id() -> None:
-    errors = check_batch("form-a", _batch(_registration(), program_id=0))
+def test_detects_a_registration_without_a_reference_id() -> None:
+    loadable, errors = check_registrations("form-a", [Registration(reference_id="")])
 
-    assert any("invalid programId" in error for error in errors)
+    assert loadable == []
+    # With no referenceId to name it, the error falls back to its place in the run.
+    assert errors == ["form-a: registration #1 has no referenceId"]
 
 
 def test_errors_are_prefixed_with_the_route() -> None:
-    errors = check_batch("form-a", _batch(Registration(reference_id="")))
+    _, errors = check_registrations("form-a", [Registration(reference_id="")])
 
     assert errors and all(error.startswith("form-a: ") for error in errors)
 
 
 def test_fsp_configurations_are_not_checked_when_121_was_not_contacted() -> None:
-    assert check_batch("form-a", _batch(_registration()), frozenset()) == []
+    registrations = [_registration()]
+
+    loadable, errors = check_registrations("form-a", registrations, frozenset())
+
+    assert loadable == registrations
+    assert errors == []
 
 
 def test_detects_a_registration_without_an_fsp_configuration() -> None:
-    errors = check_batch("form-a", _batch(_registration()), frozenset({"Excel"}))
+    loadable, errors = check_registrations("form-a", [_registration()], frozenset({"Excel"}))
 
+    assert loadable == []
     assert any("names no FSP configuration" in error for error in errors)
 
 
 def test_detects_an_fsp_configuration_the_program_does_not_have() -> None:
-    """An ODK question can name anything; 121 would reject the whole batch for one typo."""
+    """An ODK question can name anything; a typo would otherwise be rejected by 121."""
     registration = Registration(reference_id="uuid:1", fsp_configuration_name="Exel")
 
-    errors = check_batch("form-a", _batch(registration), frozenset({"Excel"}))
+    loadable, errors = check_registrations("form-a", [registration], frozenset({"Excel"}))
 
-    assert any("'Exel'" in error and "does not" in error for error in errors)
+    assert loadable == []
+    assert any("'Exel'" in error and "does not have" in error for error in errors)

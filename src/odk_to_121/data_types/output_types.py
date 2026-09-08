@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
@@ -102,22 +101,3 @@ class Registration:
         if self.fsp_configuration_name:
             payload[FSP_CONFIGURATION_ATTRIBUTE] = self.fsp_configuration_name
         return payload
-
-
-@dataclass
-class RegistrationBatch:
-    """All registrations produced for one route in one run."""
-
-    program_id: int
-    issued_at: datetime
-    source_form_id: str
-    registrations: list[Registration] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize for local output; the run metadata is not sent to 121."""
-        return {
-            "programId": self.program_id,
-            "issuedAt": self.issued_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "sourceFormId": self.source_form_id,
-            "registrations": [r.to_dict() for r in self.registrations],
-        }

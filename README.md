@@ -29,10 +29,15 @@ ODK Central (OData)  ──extract──▶  OdkSubmission  ──transform─�
 - **Transform**: `transform.py` maps ODK fields onto 121 attributes
   using the synced schema and uses the ODK instance id as the `referenceId`.
   Every submission in the form is mapped.
-- **Load**: `data_submitter.py` runs all integrity checks first and aborts on any error,
-  then produces an output: output mode `local` writes a JSON file, output mode `121` creates new
-  registrations in one batched request. Only missing registrations are created. Existing registrations
-  are not updated.
+- **Load**: `data_submitter.py` runs the integrity checks, holds back only the registrations that
+  fail them, then produces an output: output mode `local` writes a JSON file, output mode `121`
+  creates each registration in its own request, at most one per second. Only missing registrations
+  are created. Existing registrations are not updated.
+
+One bad submission never blocks a run. A registration that fails a check, or that 121 rejects, is
+reported on its own line and the rest is still loaded. The run then exits non-zero so a scheduler or
+alert rule notices, and re-running is safe: everything already in 121 is skipped by `referenceId`,
+so only the failures are retried.
 
 ## Schema sync
 
@@ -75,7 +80,7 @@ configured, it is resolved per run from what the 121 program already has:
 
 So a single-FSP program needs no setup at all, and a multi-FSP program only needs the extra ODK
 question. Names the form supplies are checked against the program's real configurations before
-anything is sent, because 121 would reject the whole batch over one typo.
+anything is sent, because 121 would reject a typo it does not recognise.
 
 Reading them needs the `program:fsp-config.read` permission. Without it a route that relies on
 auto-detection fails; one whose form picks per registration continues with a warning.
