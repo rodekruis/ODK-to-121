@@ -18,7 +18,8 @@ def _submitter() -> DataSubmitter:
         route_id="form-a",
         program_id=1,
         source_form_id="registration_form",
-        fsp_configuration_name="Excel",
+        default_fsp_configuration_name="Excel",
+        known_fsp_configuration_names=frozenset({"Excel"}),
         client_121=Client121(BASE_URL, "user", "secret"),
     )
     submitter.create_registration("uuid:1", {"fullName": "Ada", "phoneNumber": "3160"})

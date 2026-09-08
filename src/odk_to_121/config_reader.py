@@ -116,9 +116,6 @@ class ConfigReader:
             # An unquoted `121:` key parses as an int, so accept the quoted form too.
             program = _parse_program(raw.get(121, raw.get("121")))
             output_mode, output_path = _parse_output(raw.get("output"))
-            fsp_configuration_name = _parse_fsp_configuration_name(
-                raw.get("fsp_configuration_name")
-            )
         except (ValueError, TypeError, KeyError) as exc:
             logger.error("Environment '%s', route '%s': %s", environment, route_id, exc)
             return None
@@ -130,7 +127,6 @@ class ConfigReader:
             program=program,
             output_mode=output_mode,
             output_path=output_path,
-            fsp_configuration_name=fsp_configuration_name,
         )
 
 
@@ -164,11 +160,3 @@ def _parse_output(raw: Any) -> tuple[OutputMode, str]:
     if mode is OutputMode.LOCAL and not path:
         raise ValueError("output mode 'local' requires a path")
     return mode, path
-
-
-def _parse_fsp_configuration_name(raw: Any) -> str:
-    """Read the 121 FSP configuration every registration of a route is created under."""
-    name = str(raw or "").strip()
-    if not name:
-        raise ValueError("'fsp_configuration_name' is required")
-    return name

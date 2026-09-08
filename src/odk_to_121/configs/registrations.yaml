@@ -10,7 +10,6 @@ environments:
           form_id: registration_form
         121:
           program_id: 1
-        fsp_configuration_name: Excel
         output:
           mode: local
           path: output/
@@ -24,7 +23,6 @@ environments:
           form_id: MPCA Project Test
         121:
           program_id: 8
-        fsp_configuration_name: Excel
         output:
           mode: 121
 
@@ -37,6 +35,5 @@ environments:
           form_id: registration_form
         121:
           program_id: 1
-        fsp_configuration_name: Excel
         output:
           mode: 121

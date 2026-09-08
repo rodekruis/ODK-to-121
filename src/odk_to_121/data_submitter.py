@@ -29,14 +29,16 @@ class DataSubmitter:
         program_id: int,
         source_form_id: str,
         *,
-        fsp_configuration_name: str | None = None,
+        default_fsp_configuration_name: str | None = None,
+        known_fsp_configuration_names: frozenset[str] = frozenset(),
         issued_at: datetime | None = None,
         client_121: Client121 | None = None,
     ):
         """Open an empty batch for one route; without a 121 client only local output works."""
         self.route_id = route_id
         self.client_121 = client_121
-        self.fsp_configuration_name = fsp_configuration_name
+        self.default_fsp_configuration_name = default_fsp_configuration_name
+        self.known_fsp_configuration_names = known_fsp_configuration_names
         self._batch = RegistrationBatch(
             program_id=program_id,
             issued_at=issued_at or datetime.now(UTC),
@@ -53,6 +55,7 @@ class DataSubmitter:
         reference_id: str,
         attributes: dict[str, Scalar],
         preferred_language: str | None = None,
+        fsp_configuration_name: str | None = None,
     ) -> None:
         """Called by domain code to build output incrementally."""
         self._batch.registrations.append(
@@ -60,13 +63,15 @@ class DataSubmitter:
                 reference_id=reference_id,
                 attributes=attributes,
                 preferred_language=preferred_language,
-                fsp_configuration_name=self.fsp_configuration_name,
+                # The route default applies unless the ODK form named one for this person.
+                fsp_configuration_name=fsp_configuration_name
+                or self.default_fsp_configuration_name,
             )
         )
 
     def validate(self) -> list[str]:
         """Run every integrity check without loading anything. Empty list = safe to load."""
-        return check_batch(self.route_id, self._batch)
+        return check_batch(self.route_id, self._batch, self.known_fsp_configuration_names)
 
     def load_all(
         self,

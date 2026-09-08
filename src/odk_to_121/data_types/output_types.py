@@ -9,6 +9,10 @@ from typing import Any
 
 from odk_to_121.data_types.domain_types import Scalar
 
+# Keys of 121's registration DTO that `Registration` carries as fields of its own.
+PREFERRED_LANGUAGE_ATTRIBUTE = "preferredLanguage"
+FSP_CONFIGURATION_ATTRIBUTE = "programFspConfigurationName"
+
 
 class AttributeType(StrEnum):
     """The attribute types `CreateProgramRegistrationAttributeDto` accepts."""
@@ -94,9 +98,9 @@ class Registration:
         payload: dict[str, Scalar] = dict(self.attributes)
         payload["referenceId"] = self.reference_id
         if self.preferred_language:
-            payload["preferredLanguage"] = self.preferred_language
+            payload[PREFERRED_LANGUAGE_ATTRIBUTE] = self.preferred_language
         if self.fsp_configuration_name:
-            payload["programFspConfigurationName"] = self.fsp_configuration_name
+            payload[FSP_CONFIGURATION_ATTRIBUTE] = self.fsp_configuration_name
         return payload
 
 

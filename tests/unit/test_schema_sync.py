@@ -124,8 +124,12 @@ def test_built_in_attributes_are_mapped_but_never_created(name: str) -> None:
     plan, errors = derive_schema_plan("form-a", schema)
 
     assert errors == []
-    assert name in {m.attribute for m in plan.mappings}
     assert name not in {a.name for a in plan.attributes}
+    # The transform reads this flag instead of re-deriving the classification.
+    assert {m.attribute: m.is_built_in for m in plan.mappings} == {
+        "fullName": False,
+        name: True,
+    }
 
 
 @pytest.mark.parametrize("name", sorted(FORBIDDEN_ATTRIBUTES))

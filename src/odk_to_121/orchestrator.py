@@ -17,6 +17,7 @@ from odk_to_121.data_types.config_types import (
     RouteConfig,
 )
 from odk_to_121.data_types.domain_types import RegistrationMapping
+from odk_to_121.fsp_configuration import resolve_fsp_configuration
 from odk_to_121.schema_sync import SchemaPlan, sync_program_attributes
 from odk_to_121.transform import transform_submissions
 from odk_to_121.utils.client_121 import Client121
@@ -68,6 +69,10 @@ def _run_route(
     if plan is None:
         return errors
 
+    fsp_configuration, errors = resolve_fsp_configuration(route, plan.mappings, client_121)
+    if fsp_configuration is None:
+        return errors
+
     errors = provider.extract_data(route)
     if errors:
         return errors
@@ -76,7 +81,8 @@ def _run_route(
         route_id=route.route_id,
         program_id=route.program.program_id,
         source_form_id=route.odk.form_id,
-        fsp_configuration_name=route.fsp_configuration_name,
+        default_fsp_configuration_name=fsp_configuration.default_name,
+        known_fsp_configuration_names=fsp_configuration.known_names,
         issued_at=issued_at,
         client_121=client_121,
     )

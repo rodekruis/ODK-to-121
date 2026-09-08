@@ -20,7 +20,6 @@ environments:
           form_id: form_a
         121:
           program_id: 2
-        fsp_configuration_name: Excel
         output:
           mode: local
           path: output/
@@ -43,7 +42,6 @@ def test_loads_valid_config(tmp_path: Path) -> None:
     assert route.data_source is DataSource.DUMMY_SUBMISSIONS
     assert route.output_mode is OutputMode.LOCAL
     assert route.program.program_id == 2
-    assert route.fsp_configuration_name == "Excel"
 
 
 def test_repo_config_is_valid() -> None:
@@ -59,7 +57,6 @@ def test_repo_config_is_valid() -> None:
         ("data_source: dummy_submissions", "data_source: carrier_pigeon"),
         ("mode: local", "mode: telegram"),
         ("program_id: 2", "program_id: 0"),
-        ("        fsp_configuration_name: Excel\n", ""),
         ("  debug:", "  staging:"),
     ],
 )

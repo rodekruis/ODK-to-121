@@ -53,8 +53,6 @@ class RouteConfig:
     program: ProgramConfig
     output_mode: OutputMode
     output_path: str
-    # Name of a 121 FSP configuration; 121 rejects a registration created without one.
-    fsp_configuration_name: str
 
 
 @dataclass(frozen=True)

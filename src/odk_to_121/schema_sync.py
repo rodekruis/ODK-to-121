@@ -19,6 +19,8 @@ import requests
 from odk_to_121.data_types.config_types import RouteConfig
 from odk_to_121.data_types.domain_types import FieldMapping, OdkFormField, OdkFormSchema
 from odk_to_121.data_types.output_types import (
+    FSP_CONFIGURATION_ATTRIBUTE,
+    PREFERRED_LANGUAGE_ATTRIBUTE,
     AttributeType,
     ExistingAttribute,
     ProgramAttribute,
@@ -52,10 +54,12 @@ SKIPPED_ODK_TYPES = frozenset({"structure", "binary", "unknown"})
 # Repeats arrive as nested arrays, which do not fit 121's flat attribute model.
 UNSUPPORTED_ODK_TYPES = frozenset({"repeat"})
 
-# Built-in 121 registration columns a form may legitimately fill: mapped, never created.
+# Columns every 121 program already has: a form may legitimately fill one, but 121 owns and
+# validates it, so it is mapped and never created.
 BUILT_IN_ATTRIBUTES = frozenset(
     {
-        "preferredLanguage",
+        PREFERRED_LANGUAGE_ATTRIBUTE,
+        FSP_CONFIGURATION_ATTRIBUTE,
         "paymentAmountMultiplier",
         "maxPayments",
     }
@@ -72,7 +76,6 @@ FORBIDDEN_ATTRIBUTES = frozenset(
         "paymentCount",
         "paymentCountRemaining",
         "referenceId",
-        "programFspConfigurationName",
         "created",
         "personAffectedSequence",
         "fspName",
@@ -83,7 +86,7 @@ FORBIDDEN_ATTRIBUTES = frozenset(
         "program",
         "data",
         "dataSearchBy",
-        "transactions"
+        "transactions",
     }
 )
 
@@ -186,8 +189,15 @@ def derive_schema_plan(
             continue
         claimed_by[form_field.name] = form_field.path
 
-        mappings.append(FieldMapping(odk_field=form_field.path, attribute=form_field.name))
-        if form_field.name not in BUILT_IN_ATTRIBUTES:
+        is_built_in = form_field.name in BUILT_IN_ATTRIBUTES
+        mappings.append(
+            FieldMapping(
+                odk_field=form_field.path,
+                attribute=form_field.name,
+                is_built_in=is_built_in,
+            )
+        )
+        if not is_built_in:
             attributes.append(ProgramAttribute(name=form_field.name, type=attribute_type))
 
     if not mappings and not errors:

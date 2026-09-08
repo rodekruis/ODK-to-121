@@ -74,7 +74,7 @@ def test_a_preferred_language_question_sets_the_language_per_person(
     mapping = RegistrationMapping(
         fields=(
             *field_mappings,
-            FieldMapping(odk_field="person/lang", attribute="preferredLanguage"),
+            FieldMapping(odk_field="person/lang", attribute="preferredLanguage", is_built_in=True),
         ),
     )
     submission_set = OdkSubmissionSet(
@@ -96,8 +96,81 @@ def test_a_preferred_language_question_sets_the_language_per_person(
     transform_submissions(_provider(submission_set), submitter, "form-a", mapping)
 
     assert [r.preferred_language for r in submitter.registrations] == ["ar", None]
-    # It is a generic 121 property, so it must not also travel as a data attribute.
+    # It is a built-in, so it must not also travel as a data attribute.
     assert "preferredLanguage" not in submitter.registrations[0].attributes
+
+
+def test_an_fsp_configuration_question_sets_the_fsp_per_person(
+    field_mappings: tuple[FieldMapping, ...],
+) -> None:
+    mapping = RegistrationMapping(
+        fields=(
+            *field_mappings,
+            FieldMapping(
+                odk_field="person/fsp",
+                attribute="programFspConfigurationName",
+                is_built_in=True,
+            ),
+        ),
+    )
+    submission_set = OdkSubmissionSet(
+        project_id=1,
+        form_id="registration_form",
+        submissions=(
+            OdkSubmission(
+                instance_id="uuid:1",
+                values={"person/fullName": "Answered", "person/fsp": "Airtel"},
+            ),
+            OdkSubmission(
+                instance_id="uuid:2",
+                values={"person/fullName": "Skipped", "person/fsp": ""},
+            ),
+        ),
+    )
+    submitter = DataSubmitter(
+        route_id="form-a",
+        program_id=1,
+        source_form_id="registration_form",
+        default_fsp_configuration_name="Excel",
+    )
+
+    transform_submissions(_provider(submission_set), submitter, "form-a", mapping)
+
+    # An unanswered question falls back to the configuration the route resolved.
+    assert [r.fsp_configuration_name for r in submitter.registrations] == ["Airtel", "Excel"]
+    # It is a built-in, so it must not also travel as a data attribute.
+    assert "programFspConfigurationName" not in submitter.registrations[0].attributes
+
+
+def test_an_unanswered_built_in_is_left_out_but_a_plain_attribute_stays_empty(
+    field_mappings: tuple[FieldMapping, ...],
+) -> None:
+    """121 validates its own columns, so it must not receive an empty one."""
+    mapping = RegistrationMapping(
+        fields=(
+            *field_mappings,
+            FieldMapping(odk_field="person/payments", attribute="maxPayments", is_built_in=True),
+        ),
+    )
+    submission_set = OdkSubmissionSet(
+        project_id=1,
+        form_id="registration_form",
+        submissions=(
+            OdkSubmission(instance_id="uuid:1", values={"person/fullName": "Skipped"}),
+            OdkSubmission(
+                instance_id="uuid:2",
+                values={"person/fullName": "Answered", "person/payments": 0},
+            ),
+        ),
+    )
+    submitter = _submitter()
+
+    transform_submissions(_provider(submission_set), submitter, "form-a", mapping)
+
+    assert "maxPayments" not in submitter.registrations[0].attributes
+    assert submitter.registrations[0].attributes["phoneNumber"] is None
+    # A falsy answer is still an answer.
+    assert submitter.registrations[1].attributes["maxPayments"] == 0
 
 
 def test_empty_submission_set_produces_no_registrations(mapping: RegistrationMapping) -> None:

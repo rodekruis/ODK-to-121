@@ -28,7 +28,6 @@ def _run_route() -> RouteConfig:
         program=ProgramConfig(program_id=1),
         output_mode=OutputMode.PLATFORM_121,
         output_path="",
-        fsp_configuration_name="Excel",
     )
 
 

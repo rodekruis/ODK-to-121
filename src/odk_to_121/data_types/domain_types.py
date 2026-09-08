@@ -81,6 +81,7 @@ class FieldMapping:
 
     odk_field: str
     attribute: str
+    is_built_in: bool = False
 
 
 @dataclass(frozen=True)

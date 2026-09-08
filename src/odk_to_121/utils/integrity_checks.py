@@ -56,10 +56,39 @@ def check_program_id(route_id: str, batch: RegistrationBatch) -> list[str]:
     return []
 
 
-def check_batch(route_id: str, batch: RegistrationBatch) -> list[str]:
+def check_fsp_configurations(
+    route_id: str, batch: RegistrationBatch, known_names: frozenset[str]
+) -> list[str]:
+    """121 rejects a registration naming no FSP configuration, or one it does not have."""
+    # Empty means 121 was never contacted (local output, dry run), so there is nothing to check.
+    if not known_names:
+        return []
+
+    errors = []
+    for registration in batch.registrations:
+        name = registration.fsp_configuration_name
+        if name is None:
+            errors.append(
+                f"{route_id}: registration {registration.reference_id} names no FSP configuration"
+            )
+        elif name not in known_names:
+            errors.append(
+                f"{route_id}: registration {registration.reference_id} names FSP "
+                f"configuration '{name}', which 121 program {batch.program_id} does not "
+                f"have ({', '.join(sorted(known_names))})"
+            )
+    return errors
+
+
+def check_batch(
+    route_id: str,
+    batch: RegistrationBatch,
+    known_fsp_configuration_names: frozenset[str] = frozenset(),
+) -> list[str]:
     """Run every integrity check and collect all errors."""
     return [
         *check_program_id(route_id, batch),
         *check_reference_ids(route_id, batch),
         *check_attribute_types(route_id, batch),
+        *check_fsp_configurations(route_id, batch, known_fsp_configuration_names),
     ]

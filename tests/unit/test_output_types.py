@@ -32,6 +32,21 @@ def test_an_answer_cannot_override_a_key_the_pipeline_owns() -> None:
     assert payload["programFspConfigurationName"] == "Excel"
 
 
+def test_the_form_names_the_fsp_configuration_when_the_route_resolved_none() -> None:
+    """A program with several FSP configurations lets the ODK form pick per registration."""
+    payload = Registration(
+        reference_id="uuid:1",
+        attributes={"fullName": "Ada"},
+        fsp_configuration_name="Airtel",
+    ).to_dict()
+
+    assert payload == {
+        "referenceId": "uuid:1",
+        "programFspConfigurationName": "Airtel",
+        "fullName": "Ada",
+    }
+
+
 def test_unset_optional_keys_are_omitted() -> None:
     payload = Registration(reference_id="uuid:1", attributes={"fullName": "Ada"}).to_dict()
 

@@ -65,7 +65,9 @@ class Client121:
         page = 1
         while True:
             response = self.session.get(
-                url, params={"limit": PAGE_SIZE, "page": page}, timeout=self.timeout
+                url,
+                params={"limit": PAGE_SIZE, "page": page, "select": "referenceId"},
+                timeout=self.timeout,
             )
             response.raise_for_status()
             batch = _extract_records(response.json())
@@ -89,6 +91,22 @@ class Client121:
         if not isinstance(payload, dict):
             raise ValueError(f"program {program_id} did not return an object")
         return ExistingProgram.from_121(payload)
+
+    def get_fsp_configuration_names(self, program_id: int) -> frozenset[str]:
+        """Return the names of the FSP configurations a registration may be created under."""
+        self._ensure_login()
+        response = self.session.get(
+            f"{self.base_url}/api/programs/{program_id}/fsp-configurations",
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        names = frozenset(
+            str(record["name"])
+            for record in _extract_records(response.json())
+            if record.get("name")
+        )
+        logger.info("Program %d has %d FSP configurations", program_id, len(names))
+        return names
 
     def get_registration_attributes(self, program_id: int) -> dict[str, ExistingAttribute]:
         """Return the program's registration attributes, keyed by name."""

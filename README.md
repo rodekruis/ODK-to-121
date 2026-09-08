@@ -45,11 +45,12 @@ The mapping rules mirror the 121 platform's own
   Dates and geo values are deliberately `text`, because 121's typed attributes reject the
   formats ODK produces.
 - **Not created**: group nodes, attachments and ODK Collect metadata (`start`, `deviceid`,
-  `instanceID`, …) are skipped entirely. Fields corresponding to default 121 attributes that a form might legitimately fill
-  (`preferredLanguage`, `maxPayments`, `paymentAmountMultiplier`) are also skipped (already in 121).
+  `instanceID`, …) are skipped entirely. The **built-in** 121 attributes 
+  (`preferredLanguage`, `maxPayments`, `paymentAmountMultiplier`, `programFspConfigurationName`)
+  are also skipped.
 - **Forbidden**: fields named after something 121 generates (`status`, `paymentCount`,
-  `registrationProgramId`, …) or the pipeline sets itself (`referenceId`,
-  `programFspConfigurationName`) are a configuration mistake, so they abort the route.
+  `registrationProgramId`, …) or the pipeline sets itself (`referenceId`) are a configuration
+  mistake, so they abort the route.
 - **Never updated**: an existing attribute is left untouched even if the ODK form changed its
   type; the mismatch is logged as a warning.
 
@@ -57,9 +58,27 @@ Because ODK's [fields endpoint](https://docs.getodk.org/central-api-form-managem
 returns no question labels or choice lists, every select question
 becomes a plain `text` attribute with value = raw choice name. Reading labels and choices would mean parsing the XForm definition, which is complicated and adds fragility.
 
-Attributes required by 121 (`fullName`, `phoneNumber`, …) are not created nor filled in with `None`: the ODK form needs those questions named exactly as 121 expects them.
+Attributes required by 121 (e.g. `fullName`) are not created nor filled in with `None`: the ODK form needs those questions named exactly as 121 expects them.
 121 ultimately decides, so the pipeline only raises a warning when the program marks an attribute `isRequired` (or lists it in
 `fullnameNamingConvention`) and the ODK form has no field for it. 121 itself rejects what it cannot accept.
+
+## FSP configuration
+
+121 rejects a registration that names no FSP configuration, so every route needs one. It is not
+configured, it is resolved per run from what the 121 program already has:
+
+1. an ODK question named `programFspConfigurationName` picks one **per registration**;
+2. otherwise a program with **exactly one** FSP configuration implies it, and every registration
+   of the run is created with that FSP configuration;
+3. a program with **none**, or with **several and no ODK question**, aborts the route with an
+   error naming the configurations it found.
+
+So a single-FSP program needs no setup at all, and a multi-FSP program only needs the extra ODK
+question. Names the form supplies are checked against the program's real configurations before
+anything is sent, because 121 would reject the whole batch over one typo.
+
+Reading them needs the `program:fsp-config.read` permission. Without it a route that relies on
+auto-detection fails; one whose form picks per registration continues with a warning.
 
 ## Quickstart
 
@@ -94,19 +113,25 @@ odk:
   form_id: registration_form
 121:
   program_id: 1
-fsp_configuration_name: Excel
 ```
 
 Field mappings are **not** configured; they are derived from the form.
-
-`fsp_configuration_name` is required, 121 rejects a registration created without one.
+Neither is the FSP configuration; it is [resolved from the 121 program](#fsp-configuration).
 The language a person is messaged in comes from an ODK question named `preferredLanguage`;
 without one, 121 falls back to English for everyone.
 
 Secrets live in `.env` only; copy `example.env`, rename it to `.env` and fill it in.
 
 > [!IMPORTANT]
-> **Do not use admin credentials to run this pipeline.** Create a dedicated user in 121, assign it to the target program with roles `Program Admin` and `Cash Assistance Program Officer`, and use those credentials.
+> **Do not use admin credentials to run this pipeline.** Create a custom role with permissions
+> - program.read
+> - program:fsp-config.read
+> - program:registration-attributes.create
+> - registration.read
+> - registration.create
+> - registration:personal.read
+>
+> then create a dedicated user in 121, assign it that role, and use those credentials.
 
 ## Logging
 

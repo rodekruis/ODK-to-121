@@ -19,7 +19,6 @@ environments:
           form_id: registration_form
         121:
           program_id: 1
-        fsp_configuration_name: Excel
         output:
           mode: local
           path: {output_path}

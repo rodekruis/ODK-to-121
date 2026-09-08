@@ -49,3 +49,22 @@ def test_errors_are_prefixed_with_the_route() -> None:
     errors = check_batch("form-a", _batch(Registration(reference_id="")))
 
     assert errors and all(error.startswith("form-a: ") for error in errors)
+
+
+def test_fsp_configurations_are_not_checked_when_121_was_not_contacted() -> None:
+    assert check_batch("form-a", _batch(_registration()), frozenset()) == []
+
+
+def test_detects_a_registration_without_an_fsp_configuration() -> None:
+    errors = check_batch("form-a", _batch(_registration()), frozenset({"Excel"}))
+
+    assert any("names no FSP configuration" in error for error in errors)
+
+
+def test_detects_an_fsp_configuration_the_program_does_not_have() -> None:
+    """An ODK question can name anything; 121 would reject the whole batch for one typo."""
+    registration = Registration(reference_id="uuid:1", fsp_configuration_name="Exel")
+
+    errors = check_batch("form-a", _batch(registration), frozenset({"Excel"}))
+
+    assert any("'Exel'" in error and "does not" in error for error in errors)
