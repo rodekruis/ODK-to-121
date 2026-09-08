@@ -73,6 +73,17 @@ FORBIDDEN_ATTRIBUTES = frozenset(
         "paymentCountRemaining",
         "referenceId",
         "programFspConfigurationName",
+        "created",
+        "personAffectedSequence",
+        "fspName",
+        "programFspConfigurationId",
+        "programFspConfigurationLabel",
+        "lastMessageStatus",
+        "duplicateStatus",
+        "program",
+        "data",
+        "dataSearchBy",
+        "transactions"
     }
 )
 
