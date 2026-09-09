@@ -169,7 +169,7 @@ class DataSubmitter:
             self.route_id,
             created,
             len(registrations),
-            extra={"route_id": self.route_id, "created": created, "failed": len(errors)},
+            extra={"route_id": self.route_id, "created_count": created, "failed": len(errors)},
         )
         return errors
 

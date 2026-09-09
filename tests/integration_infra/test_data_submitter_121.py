@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 import responses
@@ -143,3 +144,17 @@ def test_only_the_registrations_failing_a_check_are_held_back() -> None:
     assert len(errors) == 2
     assert all("shares its referenceId" in error for error in errors)
     assert create.call_count == 1
+
+
+@pytest.mark.integration
+@responses.activate
+def test_the_success_summary_survives_being_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """A structured key shadowing a LogRecord attribute raises, and only once INFO is on."""
+    _stub_login_and_existing()
+    responses.post(CREATE_URL, json={}, status=201)
+
+    with caplog.at_level(logging.INFO, logger="odk_to_121.data_submitter"):
+        errors = _submitter().load_all(OutputMode.PLATFORM_121, "")
+
+    assert errors == []
+    assert "created 2 of 2 registrations" in caplog.text

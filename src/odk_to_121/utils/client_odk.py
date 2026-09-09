@@ -31,7 +31,7 @@ class ClientOdk:
         self._username = username
         self._password = password
         self.timeout = timeout
-        self.session = create_resilient_session()
+        self.session = create_resilient_session(allowed_methods=("GET", "POST"))
         self._token: str | None = None
 
     @classmethod
