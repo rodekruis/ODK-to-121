@@ -1,0 +1,113 @@
+"""ODK Central client (session auth + OData submissions feed)."""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any
+from urllib.parse import quote
+
+import requests
+
+from odk_to_121.utils.http import DEFAULT_TIMEOUT, create_resilient_session
+
+logger = logging.getLogger(__name__)
+
+PAGE_SIZE = 500
+
+
+class ClientOdkError(RuntimeError):
+    """Raised when ODK Central cannot be reached or authenticated against."""
+
+
+class ClientOdk:
+    """Reads submissions from ODK Central. One instance per run."""
+
+    def __init__(
+        self, base_url: str, username: str, password: str, *, timeout: int = DEFAULT_TIMEOUT
+    ):
+        """Prepare a retrying session; the token is fetched lazily on first use."""
+        self.base_url = base_url.rstrip("/")
+        self._username = username
+        self._password = password
+        self.timeout = timeout
+        self.session = create_resilient_session(allowed_methods=("GET", "POST"))
+        self._token: str | None = None
+
+    @classmethod
+    def from_env(cls) -> ClientOdk:
+        """Build a client from the ODK credentials in the environment."""
+        base_url = os.environ.get("ODK_BASE_URL")
+        username = os.environ.get("ODK_USERNAME")
+        password = os.environ.get("ODK_PASSWORD")
+        if not (base_url and username and password):
+            raise ClientOdkError("Missing ODK_BASE_URL, ODK_USERNAME or ODK_PASSWORD")
+        return cls(base_url, username, password)
+
+    def login(self) -> None:
+        """Exchange credentials for a session token."""
+        response = self.session.post(
+            f"{self.base_url}/v1/sessions",
+            json={"email": self._username, "password": self._password},
+            timeout=self.timeout,
+        )
+        if response.status_code != 200:
+            raise ClientOdkError(f"ODK login failed with status {response.status_code}")
+        token = response.json().get("token")
+        if not token:
+            raise ClientOdkError("ODK login response contained no token")
+        self._token = token
+        logger.info("Authenticated against ODK Central at %s", self.base_url)
+
+    def get_form_fields(self, project_id: int, form_id: str) -> list[dict[str, Any]]:
+        """Fetch the flat field schema of a form, with OData-sanitised names and paths."""
+        if self._token is None:
+            self.login()
+
+        url = f"{self.base_url}/v1/projects/{project_id}/forms/{quote(form_id, safe='')}/fields"
+        payload = self._get_json(url, {"odata": "true"})
+        if not isinstance(payload, list):
+            raise ClientOdkError(f"Unexpected fields payload for form '{form_id}'")
+
+        fields = [item for item in payload if isinstance(item, dict)]
+        logger.info("Fetched %d schema fields from form '%s'", len(fields), form_id)
+        return fields
+
+    def get_submissions(self, project_id: int, form_id: str) -> list[dict[str, Any]]:
+        """Fetch all submission rows of a form via OData, following pagination."""
+        if self._token is None:
+            self.login()
+
+        url = (
+            f"{self.base_url}/v1/projects/{project_id}"
+            f"/forms/{quote(form_id, safe='')}.svc/Submissions"
+        )
+        params: dict[str, str | int] = {"$top": PAGE_SIZE, "$skip": 0, "$expand": "*"}
+
+        rows: list[dict[str, Any]] = []
+        while True:
+            payload = self._get_json(url, params)
+            batch = payload.get("value", []) if isinstance(payload, dict) else None
+            if not isinstance(batch, list):
+                raise ClientOdkError(f"Unexpected OData payload for form '{form_id}'")
+            rows.extend(batch)
+            if len(batch) < PAGE_SIZE:
+                break
+            params["$skip"] = int(params["$skip"]) + PAGE_SIZE
+
+        logger.info("Fetched %d submissions from form '%s'", len(rows), form_id)
+        return rows
+
+    def _get_json(self, url: str, params: dict[str, str | int]) -> Any:
+        """Authenticated GET that reports every transport failure as a ClientOdkError."""
+        try:
+            response = self.session.get(
+                url,
+                params=params,
+                headers={"Authorization": f"Bearer {self._token}"},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            raise ClientOdkError(f"ODK request to {url} failed: {exc}") from exc

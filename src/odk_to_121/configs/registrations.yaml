@@ -1,0 +1,39 @@
+# ODK form -> 121 program. Registration attributes are derived from the ODK form
+# schema at run time and created in 121 before any registration is submitted.
+environments:
+  debug:
+    routes:
+      - id: registration-form
+        data_source: dummy_submissions
+        odk:
+          project_id: 1
+          form_id: registration_form
+        121:
+          program_id: 1
+        output:
+          mode: local
+          path: output/
+
+  test:
+    routes:
+      - id: registration-form
+        data_source: odk_submissions
+        odk:
+          project_id: 46
+          form_id: MPCA Project Test
+        121:
+          program_id: 5
+        output:
+          mode: 121
+
+  prod:
+    routes:
+      - id: registration-form
+        data_source: odk_submissions
+        odk:
+          project_id: 1
+          form_id: registration_form
+        121:
+          program_id: 1
+        output:
+          mode: 121

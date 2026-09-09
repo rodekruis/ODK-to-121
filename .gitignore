@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Pipeline artefacts
+output/
+forms/
+data/
+.cache/
