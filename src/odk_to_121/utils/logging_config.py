@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 
-NOISY_LOGGERS = ("urllib3", "requests")
+NOISY_LOGGERS = ("urllib3", "requests", "azure")
 
 # Only this tree is shipped to Azure; third-party loggers stay on the console.
 PACKAGE_LOGGER = "odk_to_121"

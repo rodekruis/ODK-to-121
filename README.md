@@ -181,6 +181,7 @@ az deployment group create \
   --parameters jobName=odk-to-121-prod \
                containerAppsEnvironmentId=<aca-env-resource-id> \
                registryName=<acr> \
+               registryResourceGroupName=<acr-rg> \
                image=odk-to-121:latest \
                keyVaultName=<vault> \
                appInsightsName=<app-insights>
@@ -190,7 +191,8 @@ The job gets a user-assigned managed identity, granted *Key Vault Secrets User* 
 *AcrPull* on the registry. It receives no credentials as environment variables: only
 `AZURE_KEY_VAULT_URL`, which is enough for the pipeline to
 [read them from the vault](#configuration) itself. Deploying the Bicep therefore needs rights to
-create role assignments.
+create role assignments — in the registry's resource group too, if that differs from the job's
+(`registryResourceGroupName` defaults to the deployment's own resource group).
 
 The `deploy` workflow authenticates with **OIDC** — no passwords in GitHub. It needs the secrets
 `AZURE_DEPLOYER_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`, and the variables

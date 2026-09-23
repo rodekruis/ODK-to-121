@@ -10,6 +10,9 @@ param containerAppsEnvironmentId string
 @description('Name of the container registry holding the image.')
 param registryName string
 
+@description('Resource group of the container registry, if it is not this one.')
+param registryResourceGroupName string = resourceGroup().name
+
 @description('Image repository and tag, e.g. odk-to-121:abc1234.')
 param image string
 
@@ -36,7 +39,6 @@ param replicaTimeout int = 840
 param location string = resourceGroup().location
 
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
-var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${jobName}-identity'
@@ -49,6 +51,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: registryName
+  scope: resourceGroup(registryResourceGroupName)
 }
 
 resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
@@ -68,16 +71,12 @@ resource keyVaultAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-resource registryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, identity.id, acrPullRoleId)
-  scope: registry
-  properties: {
+module registryAccess 'modules/registry-access.bicep' = {
+  name: 'registry-access'
+  scope: resourceGroup(registryResourceGroupName)
+  params: {
+    registryName: registryName
     principalId: identity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      acrPullRoleId
-    )
   }
 }
 
