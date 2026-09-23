@@ -1,0 +1,39 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_DEPLOYER_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push the image
+        run: |
+          az acr build \
+            --registry "${{ vars.AZURE_REGISTRY_NAME }}" \
+            --image "odk-to-121:${{ github.sha }}" \
+            --image "odk-to-121:latest" \
+            .
+
+      - name: Point the scheduled job at the new image
+        run: |
+          az containerapp job update \
+            --name "${{ vars.ACA_JOB_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io/odk-to-121:${{ github.sha }}"
