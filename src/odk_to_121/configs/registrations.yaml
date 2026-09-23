@@ -31,9 +31,9 @@ environments:
       - id: registration-form
         data_source: odk_submissions
         odk:
-          project_id: 1
-          form_id: registration_form
+          project_id: 46
+          form_id: MPCA Project Test
         121:
-          program_id: 1
+          program_id: 5
         output:
           mode: 121
