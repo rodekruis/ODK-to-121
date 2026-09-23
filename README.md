@@ -127,6 +127,14 @@ without one, 121 falls back to English for everyone.
 
 Secrets live in `.env` only; copy `example.env`, rename it to `.env` and fill it in.
 
+In the `prod` environment only, a credential that is missing from the environment is fetched from
+Azure Key Vault, provided `AZURE_KEY_VAULT_URL` is set. Vault secret names are the variable names
+with dashes instead of underscores (`ODK_BASE_URL` becomes `ODK-BASE-URL`), because Key Vault
+allows no underscores. Authentication goes through `DefaultAzureCredential`, so a deployment uses
+its managed identity and a developer uses `az login`; the identity needs the *Key Vault Secrets
+User* role. The vault is only contacted for the variables that are actually missing, so a fully
+configured environment never calls Azure.
+
 > [!IMPORTANT]
 > **Do not use admin credentials to run this pipeline.** Create a custom role with permissions
 > - program.read

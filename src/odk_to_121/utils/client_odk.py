@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 from urllib.parse import quote
 
 import requests
 
 from odk_to_121.utils.http import DEFAULT_TIMEOUT, create_resilient_session
+from odk_to_121.utils.secrets import SecretProvider
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +35,11 @@ class ClientOdk:
         self._token: str | None = None
 
     @classmethod
-    def from_env(cls) -> ClientOdk:
-        """Build a client from the ODK credentials in the environment."""
-        base_url = os.environ.get("ODK_BASE_URL")
-        username = os.environ.get("ODK_USERNAME")
-        password = os.environ.get("ODK_PASSWORD")
+    def from_secrets(cls, secrets: SecretProvider) -> ClientOdk:
+        """Build a client from the ODK credentials."""
+        base_url = secrets.get("ODK_BASE_URL")
+        username = secrets.get("ODK_USERNAME")
+        password = secrets.get("ODK_PASSWORD")
         if not (base_url and username and password):
             raise ClientOdkError("Missing ODK_BASE_URL, ODK_USERNAME or ODK_PASSWORD")
         return cls(base_url, username, password)

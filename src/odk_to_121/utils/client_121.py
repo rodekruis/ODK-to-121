@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import Any
 
@@ -12,6 +11,7 @@ import requests
 from odk_to_121.data_types.domain_types import Scalar
 from odk_to_121.data_types.output_types import ExistingAttribute, ExistingProgram
 from odk_to_121.utils.http import DEFAULT_TIMEOUT, create_resilient_session
+from odk_to_121.utils.secrets import SecretProvider
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +48,11 @@ class Client121:
         self._logged_in = False
 
     @classmethod
-    def from_env(cls) -> Client121:
-        """Build a client from the 121 credentials in the environment."""
-        base_url = os.environ.get("URL_121")
-        username = os.environ.get("USERNAME_121")
-        password = os.environ.get("PASSWORD_121")
+    def from_secrets(cls, secrets: SecretProvider) -> Client121:
+        """Build a client from the 121 credentials."""
+        base_url = secrets.get("URL_121")
+        username = secrets.get("USERNAME_121")
+        password = secrets.get("PASSWORD_121")
         if not (base_url and username and password):
             raise Client121Error("Missing URL_121, USERNAME_121 or PASSWORD_121")
         return cls(base_url, username, password)

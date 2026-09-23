@@ -17,6 +17,7 @@ from odk_to_121.orchestrator import run_pipeline
 from odk_to_121.utils.client_121 import Client121Error
 from odk_to_121.utils.client_odk import ClientOdkError
 from odk_to_121.utils.logging_config import configure_logging
+from odk_to_121.utils.secrets import SecretsError
 
 EXIT_SUCCESS = 0
 EXIT_PIPELINE_ERROR = 1
@@ -68,7 +69,7 @@ def cli(
             issued_at=issued_at,
             dry_run=dry_run,
         )
-    except (ConfigError, ClientOdkError, Client121Error) as exc:
+    except (ConfigError, ClientOdkError, Client121Error, SecretsError) as exc:
         logger.error("Configuration error: %s", exc)
         sys.exit(EXIT_CONFIG_ERROR)
 

@@ -22,6 +22,7 @@ from odk_to_121.schema_sync import SchemaPlan, sync_program_attributes
 from odk_to_121.transform import transform_submissions
 from odk_to_121.utils.client_121 import Client121
 from odk_to_121.utils.client_odk import ClientOdk
+from odk_to_121.utils.secrets import SecretProvider
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,9 @@ def run_pipeline(
 
     run_config = config.get_run_config(environment)
 
-    client_odk = _build_client_odk(run_config.routes.values())
-    client_121 = _build_client_121(run_config.routes.values(), dry_run=dry_run)
+    secrets = SecretProvider.for_environment(environment)
+    client_odk = _build_client_odk(run_config.routes.values(), secrets)
+    client_121 = _build_client_121(run_config.routes.values(), secrets, dry_run=dry_run)
 
     all_errors: list[str] = []
     for route in run_config.routes.values():
@@ -105,13 +107,15 @@ def _build_mapping(route: RouteConfig, plan: SchemaPlan) -> RegistrationMapping:
     return RegistrationMapping(fields=plan.mappings)
 
 
-def _build_client_odk(routes: Iterable[RouteConfig]) -> ClientOdk | None:
+def _build_client_odk(routes: Iterable[RouteConfig], secrets: SecretProvider) -> ClientOdk | None:
     """Only build a client, and so only require credentials, if a route reads live ODK data."""
     needs_odk = any(t.data_source is DataSource.ODK_SUBMISSIONS for t in routes)
-    return ClientOdk.from_env() if needs_odk else None
+    return ClientOdk.from_secrets(secrets) if needs_odk else None
 
 
-def _build_client_121(routes: Iterable[RouteConfig], *, dry_run: bool) -> Client121 | None:
+def _build_client_121(
+    routes: Iterable[RouteConfig], secrets: SecretProvider, *, dry_run: bool
+) -> Client121 | None:
     """Only build a client, and so only require credentials, if a route really loads to 121."""
     needs_121 = any(t.output_mode is OutputMode.PLATFORM_121 for t in routes)
-    return Client121.from_env() if needs_121 and not dry_run else None
+    return Client121.from_secrets(secrets) if needs_121 and not dry_run else None
