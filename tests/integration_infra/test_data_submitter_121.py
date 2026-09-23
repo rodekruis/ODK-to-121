@@ -130,6 +130,60 @@ def test_a_rejected_answer_is_never_echoed_into_the_error() -> None:
     assert "phoneNumber" in errors[0]
 
 
+def _taken_reference_id_body(reference_id: str) -> list[dict[str, object]]:
+    """The exact shape 121 returns when the unique referenceId index already holds the id."""
+    return [
+        {
+            "column": "referenceId",
+            "value": reference_id,
+            "error": "referenceId already exists in database",
+            "referenceId": reference_id,
+            "lineNumber": 1,
+        }
+    ]
+
+
+@pytest.mark.integration
+@responses.activate
+def test_a_taken_reference_id_is_not_an_error() -> None:
+    """121 keeps deleted registrations, so their ids stay taken. Failing would never recover."""
+    _stub_login_and_existing()
+    responses.post(CREATE_URL, json=_taken_reference_id_body("uuid:1"), status=400)
+
+    errors = _submitter().load_all(OutputMode.PLATFORM_121, "")
+
+    assert errors == []
+
+
+@pytest.mark.integration
+@responses.activate
+def test_a_taken_reference_id_is_logged_as_a_warning(caplog: pytest.LogCaptureFixture) -> None:
+    _stub_login_and_existing()
+    responses.post(CREATE_URL, json=_taken_reference_id_body("uuid:1"), status=400)
+
+    with caplog.at_level(logging.WARNING):
+        _submitter().load_all(OutputMode.PLATFORM_121, "")
+
+    assert "already taken in 121" in caplog.text
+    assert "uuid:1" in caplog.text
+
+
+@pytest.mark.integration
+@responses.activate
+def test_other_400s_are_still_errors() -> None:
+    """Only the taken-referenceId rejection is forgiven; everything else must still be loud."""
+    _stub_login_and_existing()
+    responses.post(
+        CREATE_URL,
+        json=[{"column": "phoneNumber", "value": "x", "error": "Value is not valid"}],
+        status=400,
+    )
+
+    errors = _submitter().load_all(OutputMode.PLATFORM_121, "")
+
+    assert len(errors) == 2
+
+
 @pytest.mark.integration
 @responses.activate
 def test_only_the_registrations_failing_a_check_are_held_back() -> None:

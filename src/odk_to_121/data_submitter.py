@@ -156,34 +156,70 @@ class DataSubmitter:
     def _create(self, client: Client121, registrations: list[Registration]) -> list[str]:
         """One request per registration, so one rejection never holds back the others."""
         errors: list[str] = []
+        taken = 0
         progress = with_progress(registrations, f"{self.route_id}: creating registrations", "reg")
         for registration in progress:
-            error = self._create_one(client, registration)
-            if error:
+            subject = f"{self.route_id}: registration {registration.reference_id}"
+            try:
+                response = client.create_registration(self.program_id, registration.to_dict())
+            except requests.RequestException as exc:
+                error = f"{subject} could not be created: {exc}"
                 logger.error("%s", error, extra={"route_id": self.route_id})
                 errors.append(error)
+                continue
 
-        created = len(registrations) - len(errors)
+            if response.status_code in range(200, 300):
+                continue
+
+            if _reference_id_is_taken(response):
+                taken += 1
+                logger.warning(
+                    "%s: its referenceId is already taken in 121, so it was left alone"
+                    " (deleted here, or loaded into another program)",
+                    subject,
+                    extra={"route_id": self.route_id},
+                )
+                continue
+
+            error = (
+                f"{subject} was rejected with {response.status_code}: {_redacted_body(response)}"
+            )
+            logger.error("%s", error, extra={"route_id": self.route_id})
+            errors.append(error)
+
+        created = len(registrations) - len(errors) - taken
         logger.info(
-            "%s: created %d of %d registrations",
+            "%s: created %d of %d registrations, %d already taken",
             self.route_id,
             created,
             len(registrations),
-            extra={"route_id": self.route_id, "created_count": created, "failed": len(errors)},
+            taken,
+            extra={
+                "route_id": self.route_id,
+                "created_count": created,
+                "failed": len(errors),
+                "taken_count": taken,
+            },
         )
         return errors
 
-    def _create_one(self, client: Client121, registration: Registration) -> str | None:
-        """Return why this one registration could not be created, or None if it was."""
-        subject = f"{self.route_id}: registration {registration.reference_id}"
-        try:
-            response = client.create_registration(self.program_id, registration.to_dict())
-        except requests.RequestException as exc:
-            return f"{subject} could not be created: {exc}"
 
-        if response.status_code not in range(200, 300):
-            return f"{subject} was rejected with {response.status_code}: {_redacted_body(response)}"
-        return None
+def _reference_id_is_taken(response: requests.Response) -> bool:
+    """121 never frees a referenceId: deleting a registration only changes its status."""
+    if response.status_code != 400:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    if not isinstance(payload, list):
+        return False
+    return any(
+        isinstance(row, dict)
+        and row.get("column") == "referenceId"
+        and "already exists" in str(row.get("error", ""))
+        for row in payload
+    )
 
 
 def _redacted_body(response: requests.Response) -> str:

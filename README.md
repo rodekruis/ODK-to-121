@@ -136,7 +136,7 @@ User* role. The vault is only contacted for the variables that are actually miss
 configured environment never calls Azure.
 
 > [!IMPORTANT]
-> **Do not use admin credentials to run this pipeline.** Create a custom role with permissions
+> **Do not use 121 admin credentials to run this pipeline.** Create a custom role in 121 with permissions
 > - program.read
 > - program:fsp-config.read
 > - program:registration-attributes.create
@@ -144,7 +144,7 @@ configured environment never calls Azure.
 > - registration.create
 > - registration:personal.read
 >
-> then create a dedicated user in 121, assign it that role, and use those credentials.
+> then create a dedicated user, assign it that role, and use its credentials.
 
 ## Logging
 
@@ -197,33 +197,6 @@ create role assignments — in the registry's resource group too, if that differ
 The `deploy` workflow authenticates with **OIDC** — no passwords in GitHub. It needs the secrets
 `AZURE_DEPLOYER_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`, and the variables
 `AZURE_REGISTRY_NAME`, `AZURE_RESOURCE_GROUP` and `ACA_JOB_NAME`, all on the `prod` environment.
-
-### Why the schedule is shaped the way it is
-
-Every run re-reads the whole ODK form and the whole 121 program and loads the difference, so a
-missed run costs nothing and a double run is harmless. Two settings follow from that:
-
-- `replicaTimeout` (14 minutes) is deliberately shorter than the 15-minute interval. Container Apps
-  starts a run on every tick whether or not the previous one finished, and two overlapping runs would
-  both try to create the same registrations. An overrunning run is killed instead; what it already
-  loaded stays loaded, and the next run continues from there.
-- `replicaRetryLimit` is `0`. Exit code 1 means 121 rejected some registrations, and an immediate
-  retry would only re-hit the same rejections and alert twice.
-
-New registrations are created one request per second, so a run can load at most ~800 of them before
-it hits the timeout. That is far above a normal 15-minute batch, but a **backfill** — the first prod
-run, or catching up after a long outage — should be started by hand with room to breathe:
-
-```bash
-az containerapp job start --name <job> --resource-group <rg> \
-  --args "--config" "src/odk_to_121/configs/registrations.yaml" "--environment" "prod"
-```
-
-Re-run it until it exits 0; each run picks up where the last was cut off.
-
-> [!IMPORTANT]
-> At 96 runs a day, a single permanently rejected submission alerts 96 times a day. Alert on
-> *consecutive* failures, not on every non-zero exit.
 
 ## Tests
 
