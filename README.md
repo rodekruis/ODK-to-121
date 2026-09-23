@@ -171,8 +171,8 @@ errors).
 The pipeline runs as an **Azure Container Apps Job**, triggered by cron every 15 minutes. A run is a
 one-off container: it starts, works through every route, exits with its own exit code, and is gone.
 
-`infra/main.bicep` defines the job. Deploy it once by hand, then leave it alone; the
-`deploy` workflow only swaps the image tag on release:
+`infra/main.bicep` creates the job. Deploy it once by hand, then leave it alone; the
+`deploy` workflow only swaps the image tag, on every push to `main` and on manual dispatch:
 
 ```bash
 az deployment group create \
@@ -188,15 +188,29 @@ az deployment group create \
 ```
 
 The job gets a user-assigned managed identity, granted *Key Vault Secrets User* on the vault and
-*AcrPull* on the registry. It receives no credentials as environment variables: only
-`AZURE_KEY_VAULT_URL`, which is enough for the pipeline to
-[read them from the vault](#configuration) itself. Deploying the Bicep therefore needs rights to
-create role assignments — in the registry's resource group too, if that differs from the job's
-(`registryResourceGroupName` defaults to the deployment's own resource group).
+*AcrPull* on the registry. No ODK or 121 credential is passed to the container: it only receives
+`AZURE_KEY_VAULT_URL` and `AZURE_CLIENT_ID` (which tells `DefaultAzureCredential` which identity to
+use), and reads the credentials from the vault itself.
 
-The `deploy` workflow authenticates with **OIDC** — no passwords in GitHub. It needs the secrets
-`AZURE_DEPLOYER_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`, and the variables
-`AZURE_REGISTRY_NAME`, `AZURE_RESOURCE_GROUP` and `ACA_JOB_NAME`, all on the `prod` environment.
+`infra/deployer.bicep` defines the identity GitHub Actions uses. Deploy it once too, **after** the
+job exists, and copy the `deployerClientId` it outputs into the `AZURE_DEPLOYER_CLIENT_ID` secret:
+
+```bash
+az deployment group create \
+  --resource-group <rg> \
+  --template-file infra/deployer.bicep \
+  --parameters jobName=odk-to-121-prod \
+               registryName=<acr> \
+               registryResourceGroupName=<acr-rg> \
+               githubSubject='repo:<org>@<org-id>/<repo>@<repo-id>:environment:prod'
+```
+
+Copy-paste `githubSubject` verbatim from the `subject claim` line that `azure/login` prints.
+
+The `deploy` workflow also gets a user-assigned managed identity, so no passwords in GitHub. It needs
+the secrets `AZURE_DEPLOYER_CLIENT_ID` (the client id of that identity), `AZURE_TENANT_ID` and
+`AZURE_SUBSCRIPTION_ID`, and the variables `AZURE_REGISTRY_NAME`, `AZURE_RESOURCE_GROUP` and
+`ACA_JOB_NAME`, all on the `prod` environment.
 
 ## Tests
 

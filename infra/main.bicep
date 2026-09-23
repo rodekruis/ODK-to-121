@@ -39,6 +39,7 @@ param replicaTimeout int = 840
 param location string = resourceGroup().location
 
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${jobName}-identity'
@@ -77,6 +78,7 @@ module registryAccess 'modules/registry-access.bicep' = {
   params: {
     registryName: registryName
     principalId: identity.properties.principalId
+    roleDefinitionId: acrPullRoleId
   }
 }
 
