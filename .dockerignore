@@ -1,6 +1,7 @@
 .git/
 .github/
 .venv/
+infra/
 output/
 data/
 .cache/
