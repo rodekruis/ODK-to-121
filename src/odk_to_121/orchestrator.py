@@ -110,7 +110,13 @@ def _build_mapping(route: RouteConfig, plan: SchemaPlan) -> RegistrationMapping:
 def _build_client_odk(routes: Iterable[RouteConfig], secrets: SecretProvider) -> ClientOdk | None:
     """Only build a client, and so only require credentials, if a route reads live ODK data."""
     needs_odk = any(t.data_source is DataSource.ODK_SUBMISSIONS for t in routes)
-    return ClientOdk.from_secrets(secrets) if needs_odk else None
+    if not needs_odk:
+        return None
+
+    client = ClientOdk.from_secrets(secrets)
+    # Authenticate here so bad credentials surface as a config error, before any route runs.
+    client.login()
+    return client
 
 
 def _build_client_121(
@@ -118,4 +124,9 @@ def _build_client_121(
 ) -> Client121 | None:
     """Only build a client, and so only require credentials, if a route really loads to 121."""
     needs_121 = any(t.output_mode is OutputMode.PLATFORM_121 for t in routes)
-    return Client121.from_secrets(secrets) if needs_121 and not dry_run else None
+    if not needs_121 or dry_run:
+        return None
+
+    client = Client121.from_secrets(secrets)
+    client.login()
+    return client

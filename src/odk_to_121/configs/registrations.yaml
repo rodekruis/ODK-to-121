@@ -22,7 +22,7 @@ environments:
           project_id: 46
           form_id: MPCA Project Test
         121:
-          program_id: 5
+          program_id: 8
         output:
           mode: 121
 
@@ -34,6 +34,6 @@ environments:
           project_id: 46
           form_id: MPCA Project Test
         121:
-          program_id: 5
+          program_id: 8
         output:
           mode: 121
