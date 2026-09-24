@@ -11,6 +11,7 @@ dependencies = [
     "azure-keyvault-secrets>=4.11.2",
     "azure-monitor-opentelemetry>=1.8.9",
     "click>=8.1",
+    "defusedxml>=0.7.1",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "requests>=2.32",
@@ -27,6 +28,7 @@ dev = [
     "responses>=0.25",
     "ruff>=0.8",
     "ty>=0.0.1a1",
+    "types-defusedxml>=0.7.0.20260504",
 ]
 
 [build-system]

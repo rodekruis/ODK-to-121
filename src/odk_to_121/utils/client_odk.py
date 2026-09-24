@@ -73,6 +73,24 @@ class ClientOdk:
         logger.info("Fetched %d schema fields from form '%s'", len(fields), form_id)
         return fields
 
+    def get_form_definition(self, project_id: int, form_id: str) -> bytes:
+        """Fetch the XForms definition, which is the only place labels and choices live."""
+        if self._token is None:
+            self.login()
+
+        url = f"{self.base_url}/v1/projects/{project_id}/forms/{quote(form_id, safe='')}.xml"
+        try:
+            response = self.session.get(
+                url,
+                headers={"Authorization": f"Bearer {self._token}"},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise ClientOdkError(f"ODK request to {url} failed: {exc}") from exc
+        # Bytes, not text: the XML declaration governs the encoding, not the HTTP header.
+        return response.content
+
     def get_submissions(self, project_id: int, form_id: str) -> list[dict[str, Any]]:
         """Fetch all submission rows of a form via OData, following pagination."""
         if self._token is None:

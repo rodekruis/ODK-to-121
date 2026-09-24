@@ -28,6 +28,12 @@ environments:
           mode: 121
 """
 
+FORM_DEFINITION = b"""<?xml version="1.0"?>
+<h:html xmlns="http://www.w3.org/2002/xforms" xmlns:h="http://www.w3.org/1999/xhtml">
+  <h:body><input ref="/data/fullName"/></h:body>
+</h:html>
+"""
+
 
 @pytest.fixture
 def config_path(tmp_path: Path) -> Path:
@@ -74,6 +80,12 @@ def test_a_dry_run_never_authenticates_against_121(config_path: Path) -> None:
     responses.get(
         f"{ODK_URL}/v1/projects/1/forms/registration_form/fields",
         json=[{"name": "fullName", "path": "/fullName", "type": "string"}],
+        status=200,
+    )
+    responses.get(
+        f"{ODK_URL}/v1/projects/1/forms/registration_form.xml",
+        body=FORM_DEFINITION,
+        content_type="application/xml",
         status=200,
     )
     responses.get(

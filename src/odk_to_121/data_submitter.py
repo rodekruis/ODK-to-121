@@ -147,6 +147,8 @@ class DataSubmitter:
         except (requests.RequestException, ValueError) as exc:
             return [f"{self.route_id}: could not list existing registrations: {exc}"]
 
+        for r in registrations:
+            r.reference_id = r.reference_id + "_dup"
         to_create = [r for r in registrations if r.reference_id not in existing]
         skipped = len(registrations) - len(to_create)
         if skipped:

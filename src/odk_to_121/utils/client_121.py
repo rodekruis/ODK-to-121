@@ -151,6 +151,17 @@ class Client121:
             timeout=self.timeout,
         )
 
+    def update_registration_attribute(
+        self, program_id: int, name: str, payload: dict[str, object]
+    ) -> requests.Response:
+        """Patch one registration attribute; only the supplied keys are touched."""
+        self._ensure_login()
+        return self.session.patch(
+            f"{self.base_url}/api/programs/{program_id}/registration-attributes/{name}",
+            json=payload,
+            timeout=self.timeout,
+        )
+
     def create_registration(
         self, program_id: int, registration: dict[str, Scalar]
     ) -> requests.Response:

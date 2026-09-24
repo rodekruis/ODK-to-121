@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 # Scalar values accepted as ODK answers and as 121 registration attributes.
 type Scalar = str | int | float | bool | None
+
+# Question labels and choice labels, keyed by ISO 639-1 language code.
+type Translations = dict[str, str]
 
 ODK_INSTANCE_ID_KEY = "__id"
 
@@ -66,6 +70,46 @@ class OdkFormField:
         return cls(name=name, path=path, type=str(raw.get("type") or "unknown"))
 
 
+class SelectKind(StrEnum):
+    """How many answers an ODK select question accepts."""
+
+    ONE = "select_one"
+    MULTIPLE = "select_multiple"
+
+
+@dataclass(frozen=True)
+class OdkChoice:
+    """One option of an ODK select question."""
+
+    value: str
+    labels: Translations = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class OdkQuestion:
+    """One question of an ODK form, as the XForms definition describes it.
+
+    Carries what the `/fields` endpoint cannot: labels, and whether the question is a
+    select plus the choices it offers.
+    """
+
+    path: str
+    labels: Translations = field(default_factory=dict)
+    select_kind: SelectKind | None = None
+    choices: tuple[OdkChoice, ...] = ()
+
+
+@dataclass(frozen=True)
+class OdkFormDefinition:
+    """The questions of one ODK form, keyed by the same path the `/fields` endpoint uses."""
+
+    questions: dict[str, OdkQuestion] = field(default_factory=dict)
+
+    def get(self, path: str) -> OdkQuestion | None:
+        """Read a question by its `/group/field` path."""
+        return self.questions.get(path)
+
+
 @dataclass(frozen=True)
 class OdkFormSchema:
     """The flat field schema of one ODK form."""
@@ -73,6 +117,7 @@ class OdkFormSchema:
     project_id: int
     form_id: str
     fields: tuple[OdkFormField, ...] = ()
+    definition: OdkFormDefinition = field(default_factory=OdkFormDefinition)
 
 
 @dataclass(frozen=True)

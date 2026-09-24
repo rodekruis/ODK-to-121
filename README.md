@@ -46,9 +46,12 @@ The mapping rules mirror the 121 platform's own
 
 - **Names**: the ODK question name becomes the 121 attribute name; the group path is dropped,
   so `person/fullName` becomes `fullName`. Two groups cannot share a leaf name, that raises an error.
-- **Types**: `int` and `decimal` become `numeric`; everything else storable becomes `text`.
-  Dates and geo values are deliberately `text`, because 121's typed attributes reject the
-  formats ODK produces.
+- **Types**: `int` and `decimal` become `numeric`; a `select_one` becomes a `dropdown`;
+  everything else storable becomes `text`. Dates and geo values are deliberately `text`, because
+  121's typed attributes reject the formats ODK produces.
+- **Labels**: the question label is copied per language, so the 121 portal shows the wording the
+  enumerator saw rather than the field name. A question with no usable label falls back to its
+  own name.
 - **Not created**: group nodes, attachments and ODK Collect metadata (`start`, `deviceid`,
   `instanceID`, …) are skipped entirely. The **built-in** 121 attributes 
   (`preferredLanguage`, `maxPayments`, `paymentAmountMultiplier`, `programFspConfigurationName`)
@@ -56,12 +59,33 @@ The mapping rules mirror the 121 platform's own
 - **Forbidden**: fields named after something 121 generates (`status`, `paymentCount`,
   `registrationProgramId`, …) or the pipeline sets itself (`referenceId`) are a configuration
   mistake, so they abort the route.
-- **Never updated**: an existing attribute is left untouched even if the ODK form changed its
-  type; the mismatch is logged as a warning.
+- **Never change type**: an existing attribute keeps the type 121 already gave it even if the ODK
+  form changed; the mismatch is logged as a warning. A `select_one` added to a form whose
+  attribute already exists as `text` therefore stays `text`.
 
-Because ODK's [fields endpoint](https://docs.getodk.org/central-api-form-management/#getting-form-schema-fields)
-returns no question labels or choice lists, every select question
-becomes a plain `text` attribute with value = raw choice name. Reading labels and choices would mean parsing the XForm definition, which is complicated and adds fragility.
+### Select one questions
+
+This mirrors 121's Kobo integration, which maps `select_one` to `dropdown`.
+
+The [fields endpoint](https://docs.getodk.org/central-api-form-management/#getting-form-schema-fields)
+reports XForms *binding* types, where a `select_one` is indistinguishable from free text and its
+choices are absent. So the pipeline also reads the form definition
+(`GET /v1/projects/{p}/forms/{f}.xml`) and parses it for labels and choice lists. 
+
+121 **rejects** a registration whose dropdown value is not in the attribute's option list, which
+has two consequences:
+
+- The pipeline must update dropdown options in 121. When the ODK form gets a new choice, the dropdown options
+  are updated accordingly, otherwise every registration using the
+  new choice would be rejected. The whole list is resent, so option labels edited in the 121
+  portal are overwritten.
+- A question whose choices are not in the form definition stays `text`, with a warning. Most
+  forms list their choices in the definition, so they become dropdowns, cascading selects
+  included. But a form can also keep them in an attached CSV file (`select_one_from_file`), and
+  then the pipeline cannot know which values 121 should accept.
+
+`select_multiple` also stays `text`, holding the space-separated codes. 121 has a multi-select
+type but it cannot be created through the API; this is again the same as the Kobo integration.
 
 Attributes required by 121 (e.g. `fullName`) are not created nor filled in with `None`: the ODK form needs those questions named exactly as 121 expects them.
 121 ultimately decides, so the pipeline only raises a warning when the program marks an attribute `isRequired` (or lists it in
@@ -140,6 +164,7 @@ configured environment never calls Azure.
 > - program.read
 > - program:fsp-config.read
 > - program:registration-attributes.create
+> - program:registration-attributes.update
 > - registration.read
 > - registration.create
 > - registration:personal.read
