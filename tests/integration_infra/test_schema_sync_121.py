@@ -45,6 +45,21 @@ def _stub_program(*naming_convention: str) -> None:
     )
 
 
+def _in_sync_attributes(*, gender_options: list[str] | None = None) -> list[dict[str, object]]:
+    """The attributes 121 holds when it already matches the dummy ODK form."""
+    options = ["female", "male"] if gender_options is None else gender_options
+    return [
+        {"name": "fullName", "type": "text"},
+        {"name": "phoneNumber", "type": "text"},
+        {"name": "householdSize", "type": "numeric"},
+        {
+            "name": "gender",
+            "type": "dropdown",
+            "options": [{"option": option, "label": {"en": option}} for option in options],
+        },
+    ]
+
+
 @pytest.mark.integration
 @responses.activate
 def test_creates_only_the_attributes_121_is_missing() -> None:
@@ -63,7 +78,7 @@ def test_creates_only_the_attributes_121_is_missing() -> None:
 
     assert errors == []
     assert plan is not None
-    assert create.call_count == 2
+    assert create.call_count == 3
     bodies = []
     for call in create.calls:
         body = call.request.body
@@ -71,10 +86,11 @@ def test_creates_only_the_attributes_121_is_missing() -> None:
         bodies.append(json.loads(body))
     assert {body["name"]: body["type"] for body in bodies} == {
         "phoneNumber": "text",
+        "gender": "dropdown",
         "householdSize": "numeric",
     }
     assert bodies[0]["isRequired"] is False
-    assert bodies[0]["label"] == {"en": "phoneNumber"}
+    assert bodies[0]["label"] == {"en": "Phone number"}
 
 
 @pytest.mark.integration
@@ -105,17 +121,14 @@ def test_nothing_is_created_when_the_program_is_already_in_sync() -> None:
     _stub_program("fullName")
     responses.get(
         f"{BASE_URL}/api/programs/1/attributes",
-        json={
-            "data": [
-                {"name": "fullName", "type": "text"},
-                {"name": "phoneNumber", "type": "text"},
-                {"name": "householdSize", "type": "numeric"},
-            ]
-        },
+        json={"data": _in_sync_attributes()},
         status=200,
     )
     create = responses.post(
         f"{BASE_URL}/api/programs/1/registration-attributes", json={}, status=201
+    )
+    update = responses.patch(
+        f"{BASE_URL}/api/programs/1/registration-attributes/gender", json={}, status=200
     )
 
     plan, errors = sync_program_attributes(_run_route(), None, _client())
@@ -123,6 +136,7 @@ def test_nothing_is_created_when_the_program_is_already_in_sync() -> None:
     assert errors == []
     assert plan is not None
     assert create.call_count == 0
+    assert update.call_count == 0
 
 
 @pytest.mark.integration
@@ -136,9 +150,7 @@ def test_an_attribute_121_requires_but_odk_lacks_only_warns(
         f"{BASE_URL}/api/programs/1/attributes",
         json={
             "data": [
-                {"name": "fullName", "type": "text"},
-                {"name": "phoneNumber", "type": "text"},
-                {"name": "householdSize", "type": "numeric"},
+                *_in_sync_attributes(),
                 {"name": "nationalId", "type": "text", "isRequired": True},
             ]
         },
@@ -164,9 +176,7 @@ def test_a_naming_convention_field_missing_from_odk_only_warns(
         f"{BASE_URL}/api/programs/1/attributes",
         json={
             "data": [
-                {"name": "fullName", "type": "text"},
-                {"name": "phoneNumber", "type": "text"},
-                {"name": "householdSize", "type": "numeric"},
+                *_in_sync_attributes(),
                 {"name": "firstName", "type": "text"},
                 {"name": "lastName", "type": "text"},
             ]
@@ -190,13 +200,7 @@ def test_an_unreadable_program_does_not_stop_the_sync(caplog: pytest.LogCaptureF
     responses.get(f"{BASE_URL}/api/programs/1", json={"message": "nope"}, status=500)
     responses.get(
         f"{BASE_URL}/api/programs/1/attributes",
-        json={
-            "data": [
-                {"name": "fullName", "type": "text"},
-                {"name": "phoneNumber", "type": "text"},
-                {"name": "householdSize", "type": "numeric"},
-            ]
-        },
+        json={"data": _in_sync_attributes()},
         status=200,
     )
 
@@ -223,8 +227,93 @@ def test_failed_creation_is_reported_and_blocks_the_run() -> None:
     plan, errors = sync_program_attributes(_run_route(), None, _client())
 
     assert plan is None
-    assert len(errors) == 3
+    assert len(errors) == 4
     assert "returned 400" in errors[0]
+
+
+@pytest.mark.integration
+@responses.activate
+def test_a_choice_added_in_odk_is_pushed_to_the_existing_dropdown() -> None:
+    responses.post(f"{BASE_URL}/api/users/login", json={"access_token": "t"}, status=201)
+    _stub_program("fullName")
+    responses.get(
+        f"{BASE_URL}/api/programs/1/attributes",
+        json={"data": _in_sync_attributes(gender_options=["female"])},
+        status=200,
+    )
+    update = responses.patch(
+        f"{BASE_URL}/api/programs/1/registration-attributes/gender", json={}, status=200
+    )
+
+    plan, errors = sync_program_attributes(_run_route(), None, _client())
+
+    assert errors == []
+    assert plan is not None
+    assert update.call_count == 1
+    body = update.calls[0].request.body
+    assert isinstance(body, str | bytes)
+    assert json.loads(body) == {
+        "type": "dropdown",
+        "options": [
+            {"option": "female", "label": {"en": "Female"}},
+            {"option": "male", "label": {"en": "Male"}},
+        ],
+    }
+
+
+@pytest.mark.integration
+@responses.activate
+def test_a_dropdown_121_cannot_update_blocks_the_run() -> None:
+    responses.post(f"{BASE_URL}/api/users/login", json={"access_token": "t"}, status=201)
+    _stub_program("fullName")
+    responses.get(
+        f"{BASE_URL}/api/programs/1/attributes",
+        json={"data": _in_sync_attributes(gender_options=["female"])},
+        status=200,
+    )
+    responses.patch(
+        f"{BASE_URL}/api/programs/1/registration-attributes/gender",
+        json={"message": "nope"},
+        status=400,
+    )
+
+    plan, errors = sync_program_attributes(_run_route(), None, _client())
+
+    assert plan is None
+    assert "updating the options of 'gender'" in errors[0]
+
+
+@pytest.mark.integration
+@responses.activate
+def test_a_select_one_still_held_as_text_is_only_warned_about(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Existing attributes are never retyped, so 121 keeps the free text it already has."""
+    responses.post(f"{BASE_URL}/api/users/login", json={"access_token": "t"}, status=201)
+    _stub_program("fullName")
+    responses.get(
+        f"{BASE_URL}/api/programs/1/attributes",
+        json={
+            "data": [
+                {"name": "fullName", "type": "text"},
+                {"name": "phoneNumber", "type": "text"},
+                {"name": "householdSize", "type": "numeric"},
+                {"name": "gender", "type": "text"},
+            ]
+        },
+        status=200,
+    )
+    update = responses.patch(
+        f"{BASE_URL}/api/programs/1/registration-attributes/gender", json={}, status=200
+    )
+
+    with caplog.at_level(logging.WARNING):
+        plan, errors = sync_program_attributes(_run_route(), None, _client())
+
+    assert errors == []
+    assert plan is not None
+    assert update.call_count == 0
+    assert "attribute 'gender' is 'text' in 121" in caplog.text
 
 
 @pytest.mark.integration
@@ -233,4 +322,9 @@ def test_local_output_derives_the_plan_without_calling_121() -> None:
 
     assert errors == []
     assert plan is not None
-    assert [a.name for a in plan.attributes] == ["fullName", "phoneNumber", "householdSize"]
+    assert [a.name for a in plan.attributes] == [
+        "fullName",
+        "phoneNumber",
+        "gender",
+        "householdSize",
+    ]

@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
-from odk_to_121.data_types.domain_types import OdkFormField, OdkFormSchema
+from odk_to_121.data_types.domain_types import (
+    OdkChoice,
+    OdkFormDefinition,
+    OdkFormField,
+    OdkFormSchema,
+    OdkQuestion,
+    SelectKind,
+)
 from odk_to_121.data_types.output_types import AttributeType
 from odk_to_121.schema_sync import (
     BUILT_IN_ATTRIBUTES,
@@ -11,14 +20,15 @@ from odk_to_121.schema_sync import (
 )
 
 
-def _schema(*fields: tuple[str, str, str]) -> OdkFormSchema:
-    """Build a form schema from (path, name, type) triples."""
+def _schema(*fields: tuple[str, str, str], **questions: OdkQuestion) -> OdkFormSchema:
+    """Build a form schema from (path, name, type) triples, plus questions keyed by path."""
     return OdkFormSchema(
         project_id=1,
         form_id="registration_form",
         fields=tuple(
             OdkFormField(name=name, path=path, type=field_type) for path, name, field_type in fields
         ),
+        definition=OdkFormDefinition(questions=dict(questions)),
     )
 
 
@@ -171,3 +181,67 @@ def test_form_without_usable_fields_is_an_error() -> None:
 
     assert len(errors) == 1
     assert "no usable fields" in errors[0]
+
+
+def test_a_select_one_becomes_a_dropdown_carrying_its_choices() -> None:
+    schema = _schema(
+        ("person/gender", "gender", "string"),
+        **{
+            "person/gender": OdkQuestion(
+                path="person/gender",
+                labels={"en": "Gender", "ar": "الجنس"},
+                select_kind=SelectKind.ONE,
+                choices=(OdkChoice(value="female", labels={"en": "Female"}),),
+            )
+        },
+    )
+
+    plan, errors = derive_schema_plan("form-a", schema)
+
+    assert errors == []
+    (attribute,) = plan.attributes
+    assert attribute.type is AttributeType.DROPDOWN
+    assert attribute.to_dict()["label"] == {"en": "Gender", "ar": "الجنس"}
+    assert attribute.to_dict()["options"] == [{"option": "female", "label": {"en": "Female"}}]
+
+
+def test_a_select_one_without_reachable_choices_stays_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """121 rejects any dropdown value outside the option list, so guessing is not an option."""
+    schema = _schema(
+        ("district", "district", "string"),
+        district=OdkQuestion(path="district", select_kind=SelectKind.ONE),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        plan, errors = derive_schema_plan("form-a", schema)
+
+    assert errors == []
+    assert plan.attributes[0].type is AttributeType.TEXT
+    assert "is a select_one but its choices are not in the form definition" in caplog.text
+
+
+def test_a_select_multiple_stays_text(caplog: pytest.LogCaptureFixture) -> None:
+    schema = _schema(
+        ("needs", "needs", "string"),
+        needs=OdkQuestion(
+            path="needs",
+            select_kind=SelectKind.MULTIPLE,
+            choices=(OdkChoice(value="food"),),
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        plan, errors = derive_schema_plan("form-a", schema)
+
+    assert errors == []
+    assert plan.attributes[0].type is AttributeType.TEXT
+    assert plan.attributes[0].options == ()
+    assert "is a select_multiple" in caplog.text
+
+
+def test_an_unlabelled_question_falls_back_to_its_own_name() -> None:
+    plan, _ = derive_schema_plan("form-a", _schema(("fullName", "fullName", "string")))
+
+    assert plan.attributes[0].to_dict()["label"] == {"en": "fullName"}

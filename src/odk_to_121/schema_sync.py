@@ -17,10 +17,17 @@ from dataclasses import dataclass
 import requests
 
 from odk_to_121.data_types.config_types import RouteConfig
-from odk_to_121.data_types.domain_types import FieldMapping, OdkFormField, OdkFormSchema
+from odk_to_121.data_types.domain_types import (
+    FieldMapping,
+    OdkFormField,
+    OdkFormSchema,
+    OdkQuestion,
+    SelectKind,
+)
 from odk_to_121.data_types.output_types import (
     FSP_CONFIGURATION_ATTRIBUTE,
     PREFERRED_LANGUAGE_ATTRIBUTE,
+    AttributeOption,
     AttributeType,
     ExistingAttribute,
     ProgramAttribute,
@@ -198,12 +205,58 @@ def derive_schema_plan(
             )
         )
         if not is_built_in:
-            attributes.append(ProgramAttribute(name=form_field.name, type=attribute_type))
+            attributes.append(
+                _derive_attribute(
+                    route_id, form_field, attribute_type, schema.definition.get(form_field.path)
+                )
+            )
 
     if not mappings and not errors:
         errors.append(f"{route_id}: ODK form '{schema.form_id}' has no usable fields")
 
     return SchemaPlan(tuple(mappings), tuple(attributes)), errors
+
+
+def _derive_attribute(
+    route_id: str,
+    form_field: OdkFormField,
+    attribute_type: AttributeType,
+    question: OdkQuestion | None,
+) -> ProgramAttribute:
+    """Turn one mapped field into a 121 attribute, promoting single selects to dropdowns."""
+    if question is None:
+        return ProgramAttribute(name=form_field.name, type=attribute_type)
+
+    options: tuple[AttributeOption, ...] = ()
+    if question.select_kind is SelectKind.ONE:
+        if question.choices:
+            attribute_type = AttributeType.DROPDOWN
+            options = tuple(
+                AttributeOption(option=choice.value, labels=choice.labels)
+                for choice in question.choices
+            )
+        else:
+            logger.warning(
+                "%s: field '%s' is a select_one but its choices are not in the form "
+                "definition (an attached file?); it stays free text",
+                route_id,
+                form_field.path,
+            )
+    elif question.select_kind is SelectKind.MULTIPLE:
+        # 121's own Kobo integration does the same: its multi-select type is not importable.
+        logger.warning(
+            "%s: field '%s' is a select_multiple; 121 stores it as free text holding the "
+            "space-separated codes",
+            route_id,
+            form_field.path,
+        )
+
+    return ProgramAttribute(
+        name=form_field.name,
+        type=attribute_type,
+        labels=question.labels,
+        options=options,
+    )
 
 
 def sync_program_attributes(
@@ -240,6 +293,10 @@ def sync_program_attributes(
         route.route_id, plan.mappings, existing, _read_naming_convention(route, client_121)
     )
 
+    errors = _sync_dropdown_options(route, client_121, plan.attributes, existing)
+    if errors:
+        return None, errors
+
     missing = [attribute for attribute in plan.attributes if attribute.name not in existing]
     if not missing:
         logger.info(
@@ -253,6 +310,60 @@ def sync_program_attributes(
     if creation_errors:
         return None, creation_errors
     return plan, []
+
+
+def _sync_dropdown_options(
+    route: RouteConfig,
+    client: Client121,
+    attributes: tuple[ProgramAttribute, ...],
+    existing: dict[str, ExistingAttribute],
+) -> list[str]:
+    """Realign the option lists of dropdowns 121 already has.
+
+    The only attribute this pipeline ever updates. Without it, a choice added to the ODK
+    form after the attribute was created would make 121 reject every registration that
+    uses it. The whole list is resent, so option labels edited in the portal are lost.
+    """
+    errors: list[str] = []
+    for attribute in attributes:
+        current = existing.get(attribute.name)
+        if (
+            attribute.type is not AttributeType.DROPDOWN
+            or current is None
+            or current.type != AttributeType.DROPDOWN.value
+        ):
+            continue
+
+        wanted = tuple(option.option for option in attribute.options)
+        if set(wanted) == set(current.options):
+            continue
+
+        logger.info(
+            "%s: updating the options of dropdown '%s' from %s to %s",
+            route.route_id,
+            attribute.name,
+            sorted(current.options),
+            sorted(wanted),
+        )
+        payload: dict[str, object] = {
+            "type": AttributeType.DROPDOWN.value,
+            "options": [option.to_dict() for option in attribute.options],
+        }
+        try:
+            response = client.update_registration_attribute(
+                route.program.program_id, attribute.name, payload
+            )
+        except requests.RequestException as exc:
+            errors.append(
+                f"{route.route_id}: updating the options of '{attribute.name}' failed: {exc}"
+            )
+            continue
+        if response.status_code not in range(200, 300):
+            errors.append(
+                f"{route.route_id}: 121 returned {response.status_code} updating the options "
+                f"of '{attribute.name}': {response.text[:500]}"
+            )
+    return errors
 
 
 def _create_attributes(
