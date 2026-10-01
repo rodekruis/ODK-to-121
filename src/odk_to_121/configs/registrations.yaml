@@ -32,8 +32,8 @@ environments:
         data_source: odk_submissions
         odk:
           project_id: 46
-          form_id: MPCA Project Test
+          form_id: MPCA_BRC_121_2026 test
         121:
-          program_id: 8
+          program_id: 1
         output:
           mode: 121
