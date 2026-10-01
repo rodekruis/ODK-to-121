@@ -163,6 +163,7 @@ configured environment never calls Azure.
 > **Do not use 121 admin credentials to run this pipeline.** Create a custom role in 121 with permissions
 > - program.read
 > - program:fsp-config.read
+> - program:registration-attributes.read
 > - program:registration-attributes.create
 > - program:registration-attributes.update
 > - registration.read
